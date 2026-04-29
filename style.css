@@ -1,0 +1,192 @@
+.cia-settings .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cia-settings .cia-section {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 10px;
+}
+
+.cia-settings .cia-section-title {
+    font-size: 0.95em;
+    font-weight: 700;
+    opacity: 0.9;
+    margin-bottom: 8px;
+}
+
+.cia-settings .cia-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.cia-settings .cia-row,
+.cia-settings .cia-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.cia-settings .cia-actions {
+    flex-direction: row;
+}
+
+.cia-settings .cia-actions .menu_button {
+    display: inline-flex;
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.cia-settings .cia-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cia-settings .checkbox_label {
+    min-height: 30px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+}
+
+.cia-settings .checkbox_label:hover {
+    border-color: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.cia-reference-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cia-reference-editor .cia-reference-load-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.cia-reference-editor .cia-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cia-reference-editor .menu_button {
+    width: auto;
+}
+
+.cia-settings .cia-block {
+    margin-bottom: 8px;
+    border-top: 1px dashed var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+    padding-top: 8px;
+}
+
+.cia-settings .cia-note,
+.cia-settings .cia-status,
+.cia-reference-editor .cia-note {
+    opacity: 0.8;
+    font-size: 0.9em;
+    margin: 6px 0 8px;
+}
+
+.cia-settings .cia-status {
+    padding-top: 4px;
+}
+
+.cia-message-controls {
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.16));
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.cia-message-controls .cia-status-text {
+    opacity: 0.82;
+    font-size: 0.9em;
+}
+
+.cia-message-controls .menu_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    padding: 4px 12px;
+    font-weight: 600;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.cia-message-controls .menu_button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(120, 190, 255, 0.7);
+    box-shadow: 0 6px 14px rgba(10, 18, 28, 0.28);
+}
+
+#chat .mes.cia-has-media .mes_media_wrapper {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+#chat .mes.cia-has-media .mes_img_container {
+    width: min(92vw, 760px);
+    margin-inline: auto;
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.16);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+
+#chat .mes.cia-has-media .mes_img_container .mes_img {
+    width: 100%;
+    max-height: min(80vh, 980px);
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+@media (max-width: 640px) {
+    .cia-settings .cia-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cia-settings .cia-actions .menu_button {
+        flex: 1 1 160px;
+    }
+
+    .cia-message-controls .menu_button {
+        flex: 1 1 120px;
+    }
+
+    #chat .mes.cia-has-media .mes_img_container {
+        width: min(96vw, 96vw);
+        padding: 6px;
+        border-radius: 10px;
+    }
+
+    .cia-reference-editor .cia-reference-load-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

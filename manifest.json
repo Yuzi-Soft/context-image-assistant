@@ -1,0 +1,13 @@
+{
+    "display_name": "Context Image Assistant",
+    "loading_order": 35,
+    "requires": [],
+    "optional": [
+        "sd"
+    ],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "OpenAI Codex",
+    "version": "0.1.0",
+    "homePage": "https://github.com/SillyTavern/SillyTavern"
+}

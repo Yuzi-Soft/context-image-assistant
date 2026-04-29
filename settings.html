@@ -1,0 +1,117 @@
+<div class="inline-drawer cia-settings">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>Context Image Assistant</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <div class="cia-section">
+            <div class="cia-section-title">基础开关</div>
+            <div class="cia-row">
+                <label class="checkbox_label" for="cia_enabled"><span>启用自动分析</span><input type="checkbox" id="cia_enabled" class="checkbox"></label>
+                <label class="checkbox_label" for="cia_auto_generate"><span>候选完成后自动生图</span><input type="checkbox" id="cia_auto_generate" class="checkbox"></label>
+                <label class="checkbox_label" for="cia_use_st_prompt_preset"><span>使用 ST 预设/Prompt 钩子</span><input type="checkbox" id="cia_use_st_prompt_preset" class="checkbox"></label>
+                <label class="checkbox_label" for="cia_use_json_schema"><span>请求 JSON Schema 输出</span><input type="checkbox" id="cia_use_json_schema" class="checkbox"></label>
+            </div>
+        </div>
+
+        <div class="cia-section">
+            <div class="cia-section-title">LLM 配置</div>
+            <div class="cia-grid">
+                <label class="cia-field" for="cia_provider_mode">
+                    <span>LLM 来源</span>
+                    <select id="cia_provider_mode" class="text_pole">
+                        <option value="st_current">使用 ST 当前 LLM 设置</option>
+                        <option value="custom_proxy">自定义 OpenAI 兼容端点</option>
+                    </select>
+                </label>
+                <label class="cia-field" for="cia_response_tokens">
+                    <span>最大返回 token</span>
+                    <input id="cia_response_tokens" type="number" min="64" max="4096" step="1" class="text_pole">
+                </label>
+            </div>
+
+            <div id="cia_custom_api_block" class="cia-block">
+                <div class="cia-grid">
+                    <label class="cia-field" for="cia_custom_url">
+                        <span>端点 Base URL</span>
+                        <input id="cia_custom_url" type="text" class="text_pole" placeholder="http://127.0.0.1:5000/v1">
+                    </label>
+                    <label class="cia-field" for="cia_custom_temperature">
+                        <span>温度</span>
+                        <input id="cia_custom_temperature" type="number" min="0" max="2" step="0.05" class="text_pole">
+                    </label>
+                </div>
+
+                <label class="cia-field" for="cia_custom_api_key">
+                    <span>API Key（可留空）</span>
+                    <input id="cia_custom_api_key" type="password" class="text_pole" autocomplete="off" placeholder="sk-...">
+                </label>
+
+                <div class="cia-grid cia-model-row">
+                    <label class="cia-field" for="cia_custom_model">
+                        <span>模型（手填）</span>
+                        <input id="cia_custom_model" type="text" class="text_pole" placeholder="gpt-4o-mini">
+                    </label>
+                    <label class="cia-field" for="cia_custom_model_select">
+                        <span>模型（列表）</span>
+                        <select id="cia_custom_model_select" class="text_pole">
+                            <option value="">请先获取模型</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="cia-actions">
+                    <button id="cia_fetch_custom_models" class="menu_button" type="button">获取模型</button>
+                </div>
+
+                <div class="cia-grid">
+                    <label class="cia-field" for="cia_api_profile_select">
+                        <span>已保存 API 配置</span>
+                        <select id="cia_api_profile_select" class="text_pole">
+                            <option value="">暂无已保存配置</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="cia-actions">
+                    <button id="cia_api_profile_save" class="menu_button" type="button">保存当前配置</button>
+                    <button id="cia_api_profile_load" class="menu_button" type="button">加载选中配置</button>
+                    <button id="cia_api_profile_delete" class="menu_button" type="button">删除选中配置</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="cia-section">
+            <div class="cia-section-title">上下文设置</div>
+            <div class="cia-grid">
+                <label class="cia-field" for="cia_context_messages"><span>截取最近消息数</span><input id="cia_context_messages" type="number" min="1" max="200" step="1" class="text_pole"></label>
+                <label class="cia-field" for="cia_context_chars"><span>最大上下文字符数（0=不限制）</span><input id="cia_context_chars" type="number" min="0" max="100000" step="100" class="text_pole"></label>
+            </div>
+            <div class="cia-grid">
+                <label class="cia-field" for="cia_min_prompt_chars"><span>最短有效提示词字符数</span><input id="cia_min_prompt_chars" type="number" min="0" max="1000" step="1" class="text_pole"></label>
+            </div>
+            <div class="cia-row">
+                <label class="checkbox_label" for="cia_include_system"><span>包含系统消息</span><input type="checkbox" id="cia_include_system" class="checkbox"></label>
+                <label class="checkbox_label" for="cia_include_names"><span>保留发言者名称</span><input type="checkbox" id="cia_include_names" class="checkbox"></label>
+            </div>
+        </div>
+
+        <div class="cia-section">
+            <div class="cia-section-title">提示词</div>
+            <label class="cia-field" for="cia_system_prompt"><span>发送给 LLM 的开头提示词</span><textarea id="cia_system_prompt" class="text_pole textarea_compact" rows="10"></textarea></label>
+            <label class="cia-field" for="cia_prepend_message"><span>追加消息 / 补充信息（最前）</span><textarea id="cia_prepend_message" class="text_pole textarea_compact" rows="5"></textarea></label>
+        </div>
+
+        <div class="cia-section">
+            <div class="cia-section-title">操作与状态</div>
+            <div class="cia-actions">
+                <button id="cia_character_reference" class="menu_button" type="button">人物特征参考</button>
+                <button id="cia_analyze_last" class="menu_button" type="button">为最后一层生成候选</button>
+                <button id="cia_restore_prompt" class="menu_button" type="button">恢复默认提示词</button>
+            </div>
+            <div id="cia_reference_status" class="cia-note"></div>
+            <div class="cia-status">
+                <div><strong>状态:</strong> <span id="cia_status_value">idle</span></div>
+                <div><strong>最后结果:</strong> <span id="cia_last_result">尚未运行</span></div>
+            </div>
+        </div>
+    </div>
+</div>
