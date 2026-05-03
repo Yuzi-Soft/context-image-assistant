@@ -71,6 +71,9 @@ const DEFAULT_SETTINGS = {
     includeSystem: false,
     includeNames: true,
     useJsonSchema: true,
+    useCustomJsonSchema: false,
+    customJsonSchema: '',
+    jsonSchemaProfiles: [],
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     prependMessage: '',
     apiProfiles: [],
@@ -127,6 +130,12 @@ function ensureSettings() {
     if (!Array.isArray(settings.apiProfiles)) {
         settings.apiProfiles = [];
     }
+    if (!Array.isArray(settings.jsonSchemaProfiles)) {
+        settings.jsonSchemaProfiles = [];
+    }
+    if (!settings.customJsonSchema) {
+        settings.customJsonSchema = JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
+    }
     // Migration: legacy provider option removed.
     if (settings.providerMode === 'st_custom_config') {
         settings.providerMode = 'custom_proxy';
@@ -139,6 +148,75 @@ function getApiProfileList() {
     return settings.apiProfiles
         .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+function getJsonSchemaProfileList() {
+    const settings = ensureSettings();
+    return settings.jsonSchemaProfiles
+        .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
+        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+function renderJsonSchemaProfileOptions() {
+    const select = $('#cia_schema_profile_select');
+    if (!select.length) {
+        return;
+    }
+
+    const profiles = getJsonSchemaProfileList();
+    const currentName = String(select.val() || '');
+    select.empty();
+    if (!profiles.length) {
+        select.append($('<option></option>').val('').text('暂无已保存格式'));
+        select.prop('disabled', true);
+        return;
+    }
+
+    for (const profile of profiles) {
+        select.append($('<option></option>').val(profile.name).text(profile.name));
+    }
+    select.prop('disabled', false);
+    const hasCurrent = profiles.some(x => x.name === currentName);
+    select.val(hasCurrent ? currentName : profiles[0].name);
+}
+
+function upsertJsonSchemaProfile(name) {
+    const settings = ensureSettings();
+    name = String(name || '').trim();
+    if (!name) {
+        throw new Error('格式名称不能为空。');
+    }
+
+    const next = {
+        name,
+        useCustomJsonSchema: Boolean(settings.useCustomJsonSchema),
+        customJsonSchema: String(settings.customJsonSchema || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2),
+        updatedAt: new Date().toISOString(),
+    };
+    const index = settings.jsonSchemaProfiles.findIndex(x => String(x?.name || '') === name);
+    if (index >= 0) {
+        settings.jsonSchemaProfiles[index] = next;
+    } else {
+        settings.jsonSchemaProfiles.push(next);
+    }
+}
+
+function applyJsonSchemaProfileByName(name) {
+    const settings = ensureSettings();
+    name = String(name || '').trim();
+    const profile = settings.jsonSchemaProfiles.find(x => String(x?.name || '') === name);
+    if (!profile) {
+        throw new Error('未找到该格式配置。');
+    }
+    settings.useCustomJsonSchema = Boolean(profile.useCustomJsonSchema);
+    settings.customJsonSchema = String(profile.customJsonSchema || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
+}
+
+function removeJsonSchemaProfileByName(name) {
+    const settings = ensureSettings();
+    const before = settings.jsonSchemaProfiles.length;
+    settings.jsonSchemaProfiles = settings.jsonSchemaProfiles.filter(x => String(x?.name || '') !== String(name || ''));
+    return settings.jsonSchemaProfiles.length !== before;
 }
 
 function renderApiProfileOptions() {
@@ -217,6 +295,7 @@ function updateStatusUi() {
     $('#cia_auto_generate').prop('checked', settings.autoGenerate);
     $('#cia_use_st_prompt_preset').prop('checked', settings.useStPromptPreset);
     $('#cia_use_json_schema').prop('checked', settings.useJsonSchema);
+    $('#cia_use_custom_json_schema').prop('checked', settings.useCustomJsonSchema);
     $('#cia_provider_mode').val(settings.providerMode);
     $('#cia_response_tokens').val(settings.responseTokens);
     $('#cia_custom_url').val(settings.customUrl);
@@ -231,8 +310,10 @@ function updateStatusUi() {
     $('#cia_include_names').prop('checked', settings.includeNames);
     $('#cia_system_prompt').val(settings.systemPrompt);
     $('#cia_prepend_message').val(settings.prependMessage);
+    $('#cia_custom_json_schema').val(settings.customJsonSchema || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2));
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
     renderApiProfileOptions();
+    renderJsonSchemaProfileOptions();
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
     updateReferenceStatusUi();
@@ -244,6 +325,7 @@ function saveFromUi() {
     settings.autoGenerate = !!$('#cia_auto_generate').prop('checked');
     settings.useStPromptPreset = !!$('#cia_use_st_prompt_preset').prop('checked');
     settings.useJsonSchema = !!$('#cia_use_json_schema').prop('checked');
+    settings.useCustomJsonSchema = !!$('#cia_use_custom_json_schema').prop('checked');
     settings.providerMode = String($('#cia_provider_mode').val() || DEFAULT_SETTINGS.providerMode);
     settings.responseTokens = clampInteger($('#cia_response_tokens').val(), 64, 4096, DEFAULT_SETTINGS.responseTokens);
     settings.customUrl = String($('#cia_custom_url').val() || '').trim();
@@ -257,9 +339,11 @@ function saveFromUi() {
     settings.includeNames = !!$('#cia_include_names').prop('checked');
     settings.systemPrompt = String($('#cia_system_prompt').val() || DEFAULT_SYSTEM_PROMPT);
     settings.prependMessage = String($('#cia_prepend_message').val() || '');
+    settings.customJsonSchema = String($('#cia_custom_json_schema').val() || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
     saveSettingsDebounced();
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
     renderApiProfileOptions();
+    renderJsonSchemaProfileOptions();
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
 }
@@ -273,8 +357,8 @@ async function createSettingsUi() {
     const html = await renderExtensionTemplateAsync(EXTENSION_PATH, 'settings');
     $(`#${PANEL_CONTAINER_ID}`).empty().append(html);
 
-    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_include_system, #cia_include_names').on('change', saveFromUi);
-    $('#cia_provider_mode, #cia_response_tokens, #cia_custom_url, #cia_custom_model, #cia_custom_api_key, #cia_custom_temperature, #cia_context_messages, #cia_context_chars, #cia_min_prompt_chars, #cia_system_prompt, #cia_prepend_message').on('input change', saveFromUi);
+    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names').on('change', saveFromUi);
+    $('#cia_provider_mode, #cia_response_tokens, #cia_custom_url, #cia_custom_model, #cia_custom_api_key, #cia_custom_temperature, #cia_context_messages, #cia_context_chars, #cia_min_prompt_chars, #cia_system_prompt, #cia_prepend_message, #cia_custom_json_schema').on('input change', saveFromUi);
     $('#cia_custom_model_select').on('change', function () {
         const value = String($(this).val() || '').trim();
         if (!value) {
@@ -333,6 +417,50 @@ async function createSettingsUi() {
             saveSettingsDebounced();
             renderApiProfileOptions();
             toastr.info(`已删除配置：${name}`, 'Context Image Assistant');
+        }
+    });
+    $('#cia_schema_profile_save').on('click', async () => {
+        const suggested = 'default-schema';
+        const name = await Popup.show.input('保存强制格式', '输入格式配置名', suggested, { okButton: '保存', cancelButton: '取消' });
+        if (name === null) {
+            return;
+        }
+        try {
+            saveFromUi();
+            // Validate before save for better UX.
+            getEffectiveJsonSchema(ensureSettings());
+            upsertJsonSchemaProfile(name);
+            saveSettingsDebounced();
+            renderJsonSchemaProfileOptions();
+            $('#cia_schema_profile_select').val(String(name).trim());
+            toastr.success('强制格式已保存。', 'Context Image Assistant');
+        } catch (error) {
+            toastr.error(String(error?.message || error), 'Context Image Assistant');
+        }
+    });
+    $('#cia_schema_profile_load').on('click', () => {
+        const name = String($('#cia_schema_profile_select').val() || '');
+        if (!name) {
+            return;
+        }
+        try {
+            applyJsonSchemaProfileByName(name);
+            saveSettingsDebounced();
+            updateStatusUi();
+            toastr.success(`已加载格式：${name}`, 'Context Image Assistant');
+        } catch (error) {
+            toastr.error(String(error?.message || error), 'Context Image Assistant');
+        }
+    });
+    $('#cia_schema_profile_delete').on('click', () => {
+        const name = String($('#cia_schema_profile_select').val() || '');
+        if (!name) {
+            return;
+        }
+        if (removeJsonSchemaProfileByName(name)) {
+            saveSettingsDebounced();
+            renderJsonSchemaProfileOptions();
+            toastr.info(`已删除格式：${name}`, 'Context Image Assistant');
         }
     });
     $('#cia_restore_prompt').on('click', () => {
@@ -995,11 +1123,12 @@ async function callPlannerLlm(messageId, { imageReference = null, signal = null 
         systemPrompt: settings.systemPrompt,
         responseLength: settings.responseTokens,
         trimNames: false,
-        jsonSchema: settings.useJsonSchema ? IMAGE_JSON_SCHEMA : null,
+        jsonSchema: getEffectiveJsonSchema(settings),
     });
 }
 
 async function callCurrentOpenAiLlm(settings, userPrompt, signal = null) {
+    const jsonSchema = getEffectiveJsonSchema(settings);
     const data = await sendOpenAIRequest(
         'quiet',
         [
@@ -1007,7 +1136,7 @@ async function callCurrentOpenAiLlm(settings, userPrompt, signal = null) {
             { role: 'user', content: substituteParams(userPrompt) },
         ],
         signal || new AbortController().signal,
-        { jsonSchema: settings.useJsonSchema ? IMAGE_JSON_SCHEMA : null },
+        { jsonSchema },
     );
 
     const text = typeof data === 'string' ? data : extractMessageFromData(data, 'openai');
@@ -1025,6 +1154,7 @@ async function callStCustomConfigLlm(settings, userPrompt, signal = null) {
         throw new Error('请先在 ST 的 Chat Completion 里配置 Custom 模型名。');
     }
 
+    const jsonSchema = getEffectiveJsonSchema(settings);
     return callCustomChatCompletion({
         messages: [
             { role: 'system', content: substituteParams(settings.systemPrompt) },
@@ -1037,7 +1167,7 @@ async function callStCustomConfigLlm(settings, userPrompt, signal = null) {
         customIncludeBody: oai_settings.custom_include_body || '',
         customExcludeBody: oai_settings.custom_exclude_body || '',
         customIncludeHeaders: oai_settings.custom_include_headers || '',
-        jsonSchema: settings.useJsonSchema ? IMAGE_JSON_SCHEMA : null,
+        jsonSchema,
         signal,
     });
 }
@@ -1050,6 +1180,7 @@ async function callCustomProxyLlm(settings, userPrompt, signal = null) {
         throw new Error('请先填写自定义 LLM 模型名。');
     }
 
+    const jsonSchema = getEffectiveJsonSchema(settings);
     return callCustomChatCompletion({
         messages: [
             { role: 'system', content: substituteParams(settings.systemPrompt) },
@@ -1062,7 +1193,7 @@ async function callCustomProxyLlm(settings, userPrompt, signal = null) {
         customIncludeBody: '',
         customExcludeBody: '',
         customIncludeHeaders: buildCustomApiKeyHeaders(settings.customApiKey),
-        jsonSchema: settings.useJsonSchema ? IMAGE_JSON_SCHEMA : null,
+        jsonSchema,
         signal,
     });
 }
@@ -1105,6 +1236,46 @@ async function callCustomChatCompletion({ messages, model, temperature, maxToken
         throw new Error('自定义 LLM 没有返回文本。');
     }
     return text;
+}
+
+function getEffectiveJsonSchema(settings) {
+    if (!settings.useJsonSchema) {
+        return null;
+    }
+    if (!settings.useCustomJsonSchema) {
+        return IMAGE_JSON_SCHEMA;
+    }
+
+    const raw = String(settings.customJsonSchema || '').trim();
+    if (!raw) {
+        throw new Error('已启用自定义 JSON Schema，但内容为空。');
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        throw new Error('自定义 JSON Schema 不是合法 JSON。');
+    }
+
+    const schemaValue = parsed.value || parsed.schema || null;
+    if (schemaValue && typeof schemaValue === 'object' && !Array.isArray(schemaValue)) {
+        return {
+            name: String(parsed.name || 'context_image_request'),
+            strict: parsed.strict !== undefined ? Boolean(parsed.strict) : true,
+            value: schemaValue,
+        };
+    }
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return {
+            name: 'context_image_request',
+            strict: true,
+            value: parsed,
+        };
+    }
+
+    throw new Error('自定义 JSON Schema 格式无效。');
 }
 
 function buildCustomApiKeyHeaders(apiKey) {

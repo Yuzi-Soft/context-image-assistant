@@ -11,6 +11,7 @@
                 <label class="checkbox_label" for="cia_auto_generate"><span>候选完成后自动生图</span><input type="checkbox" id="cia_auto_generate" class="checkbox"></label>
                 <label class="checkbox_label" for="cia_use_st_prompt_preset"><span>使用 ST 预设/Prompt 钩子</span><input type="checkbox" id="cia_use_st_prompt_preset" class="checkbox"></label>
                 <label class="checkbox_label" for="cia_use_json_schema"><span>请求 JSON Schema 输出</span><input type="checkbox" id="cia_use_json_schema" class="checkbox"></label>
+                <label class="checkbox_label" for="cia_use_custom_json_schema"><span>启用自定义 JSON Schema</span><input type="checkbox" id="cia_use_custom_json_schema" class="checkbox"></label>
             </div>
         </div>
 
@@ -98,6 +99,20 @@
             <div class="cia-section-title">提示词</div>
             <label class="cia-field" for="cia_system_prompt"><span>发送给 LLM 的开头提示词</span><textarea id="cia_system_prompt" class="text_pole textarea_compact" rows="10"></textarea></label>
             <label class="cia-field" for="cia_prepend_message"><span>追加消息 / 补充信息（最前）</span><textarea id="cia_prepend_message" class="text_pole textarea_compact" rows="5"></textarea></label>
+            <label class="cia-field" for="cia_custom_json_schema"><span>自定义 JSON Schema（支持完整结构 {name,strict,value/schema} 或仅 schema）</span><textarea id="cia_custom_json_schema" class="text_pole textarea_compact" rows="12"></textarea></label>
+            <div class="cia-grid">
+                <label class="cia-field" for="cia_schema_profile_select">
+                    <span>已保存强制格式</span>
+                    <select id="cia_schema_profile_select" class="text_pole">
+                        <option value="">暂无已保存格式</option>
+                    </select>
+                </label>
+            </div>
+            <div class="cia-actions">
+                <button id="cia_schema_profile_save" class="menu_button" type="button">保存当前格式</button>
+                <button id="cia_schema_profile_load" class="menu_button" type="button">加载选中格式</button>
+                <button id="cia_schema_profile_delete" class="menu_button" type="button">删除选中格式</button>
+            </div>
         </div>
 
         <div class="cia-section">
