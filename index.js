@@ -1346,13 +1346,48 @@ function normalizeCandidate(value) {
     }
     assertCandidatePromptIsNotEmpty(prompt);
 
-    return {
+    const normalized = {
         prompt,
         negative_prompt: String(value.negative_prompt || value.negative || '').trim(),
         lighting_strength: clampNumber(strengths.lighting_strength, -10, 10, getComfyPlaceholderDefault('lighting_strength', 0)),
         front_lighting_strength: clampNumber(strengths.front_lighting_strength, -10, 10, getComfyPlaceholderDefault('front_lighting_strength', 1)),
         female_pov_strength: clampNumber(strengths.female_pov_strength, -10, 10, getComfyPlaceholderDefault('female_pov_strength', 0)),
     };
+
+    const reservedKeys = new Set([
+        'prompt',
+        'positive_prompt',
+        'image_prompt',
+        'negative_prompt',
+        'negative',
+        'strengths',
+        'lora_strengths',
+        'lora',
+    ]);
+
+    // Keep additional primitive key/value pairs so placeholder replacement
+    // can map dynamically to custom workflow placeholders.
+    const mergeExtras = (source) => {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            return;
+        }
+        for (const [key, rawValue] of Object.entries(source)) {
+            if (!key || reservedKeys.has(key)) {
+                continue;
+            }
+            const valueType = typeof rawValue;
+            if (rawValue === null || valueType === 'string' || valueType === 'number' || valueType === 'boolean') {
+                normalized[key] = rawValue;
+            }
+        }
+    };
+
+    mergeExtras(value);
+    if (strengths !== value) {
+        mergeExtras(strengths);
+    }
+
+    return normalized;
 }
 
 function coerceCandidateValue(value, depth = 0) {
@@ -1790,14 +1825,26 @@ async function generateComfyImage(candidate, signal = null) {
         height: sd.height,
     };
 
+    const candidateOverrideKeys = new Set(
+        Object.entries(candidate || {})
+            .filter(([key, rawValue]) => {
+                if (!key || key === 'prompt' || key === 'negative_prompt') {
+                    return false;
+                }
+                const valueType = typeof rawValue;
+                return rawValue === null || valueType === 'string' || valueType === 'number' || valueType === 'boolean';
+            })
+            .map(([key]) => key),
+    );
+
     for (const placeholder of sd.comfy_placeholders || []) {
-        if (!placeholder?.find || STRENGTH_KEYS.includes(placeholder.find)) {
+        if (!placeholder?.find || candidateOverrideKeys.has(placeholder.find)) {
             continue;
         }
         replacements[placeholder.find] = substituteParams(String(placeholder.replace ?? ''));
     }
 
-    for (const key of STRENGTH_KEYS) {
+    for (const key of candidateOverrideKeys) {
         replacements[key] = candidate[key];
     }
 
