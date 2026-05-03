@@ -1520,10 +1520,20 @@ function normalizeCandidate(value) {
     const normalized = {
         prompt,
         negative_prompt: String(value.negative_prompt || value.negative || '').trim(),
-        lighting_strength: clampNumber(strengths.lighting_strength, -10, 10, getComfyPlaceholderDefault('lighting_strength', 0)),
-        front_lighting_strength: clampNumber(strengths.front_lighting_strength, -10, 10, getComfyPlaceholderDefault('front_lighting_strength', 1)),
-        female_pov_strength: clampNumber(strengths.female_pov_strength, -10, 10, getComfyPlaceholderDefault('female_pov_strength', 0)),
     };
+
+    const useLegacyStrengthDefaults = !ensureSettings().useCustomJsonSchema;
+    const applyStrengthIfNeeded = (key, fallback) => {
+        const hasExplicitValue = strengths[key] !== undefined || value[key] !== undefined;
+        if (!hasExplicitValue && !useLegacyStrengthDefaults) {
+            return;
+        }
+        normalized[key] = clampNumber(strengths[key], -10, 10, getComfyPlaceholderDefault(key, fallback));
+    };
+
+    applyStrengthIfNeeded('lighting_strength', 0);
+    applyStrengthIfNeeded('front_lighting_strength', 1);
+    applyStrengthIfNeeded('female_pov_strength', 0);
 
     const reservedKeys = new Set([
         'prompt',
