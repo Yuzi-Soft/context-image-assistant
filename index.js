@@ -612,6 +612,7 @@ function createMessageSnapshot(messageId) {
         ref: message,
         swipeId: Number.isInteger(message?.swipe_id) ? message.swipe_id : null,
         text: getMessageText(message),
+        checkText: false,
     };
 }
 
@@ -630,7 +631,7 @@ function resolveMessageTarget(messageId, expectedSnapshot = null) {
         if (expectedSnapshot.swipeId !== null && currentSwipeId !== expectedSnapshot.swipeId) {
             return null;
         }
-        if (typeof expectedSnapshot.text === 'string' && getMessageText(message) !== expectedSnapshot.text) {
+        if (expectedSnapshot.checkText && typeof expectedSnapshot.text === 'string' && getMessageText(message) !== expectedSnapshot.text) {
             return null;
         }
         return { messageId: id, message };
@@ -981,6 +982,11 @@ async function requestImageCandidate(messageId, { force = false, manual = false,
         const rawResponse = await callPlannerLlm(messageId, { imageReference, signal: plannerController.signal });
         const latestTarget = resolveMessageTarget(messageId, expectedSnapshot);
         if (!latestTarget) {
+            setMessageState(messageId, {
+                status: 'cancelled',
+                error: '',
+                updatedAt: new Date().toISOString(),
+            });
             if (!silentIfStale) {
                 runtimeState.status = 'idle';
                 runtimeState.lastResult = `#${messageId} 任务已跳过（楼层已变化或删除）`;
@@ -1904,6 +1910,11 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
         const result = await generateComfyImage(data.parsed, imageController.signal);
         const latestTarget = resolveMessageTarget(messageId, expectedSnapshot);
         if (!latestTarget) {
+            setMessageState(messageId, {
+                status: 'ready',
+                error: '',
+                updatedAt: new Date().toISOString(),
+            });
             if (!silentIfStale) {
                 runtimeState.status = 'idle';
                 runtimeState.lastResult = `#${messageId} 生图结果已丢弃（楼层已变化或删除）`;
