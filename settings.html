@@ -4,128 +4,299 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
     </div>
     <div class="inline-drawer-content">
-        <div class="cia-section">
-            <div class="cia-section-title">基础开关</div>
-            <div class="cia-row">
-                <label class="checkbox_label" for="cia_enabled"><span>启用自动分析</span><input type="checkbox" id="cia_enabled" class="checkbox"></label>
-                <label class="checkbox_label" for="cia_auto_generate"><span>候选完成后自动生图</span><input type="checkbox" id="cia_auto_generate" class="checkbox"></label>
-                <label class="checkbox_label" for="cia_use_st_prompt_preset"><span>使用 ST 预设/Prompt 钩子</span><input type="checkbox" id="cia_use_st_prompt_preset" class="checkbox"></label>
-                <label class="checkbox_label" for="cia_use_json_schema"><span>请求 JSON Schema 输出</span><input type="checkbox" id="cia_use_json_schema" class="checkbox"></label>
-                <label class="checkbox_label" for="cia_use_custom_json_schema"><span>启用自定义 JSON Schema</span><input type="checkbox" id="cia_use_custom_json_schema" class="checkbox"></label>
+        <!-- Tab Bar Control Row -->
+        <div class="cia-tab-container">
+            <div class="cia-tab-row">
+                <button class="cia-tab-btn active" data-tab="tab-run" type="button" data-i18n="[title]Run tab tooltip;Run"><i class="fa-solid fa-play"></i> Run</button>
+                <button class="cia-tab-btn" data-tab="tab-llm" type="button" data-i18n="[title]LLM Settings tab tooltip;LLM"><i class="fa-solid fa-server"></i> LLM</button>
+                <button class="cia-tab-btn" data-tab="tab-context" type="button" data-i18n="[title]Context Settings tab tooltip;Context"><i class="fa-solid fa-comment-dots"></i> Context</button>
+                <button class="cia-tab-btn" data-tab="tab-prompt" type="button" data-i18n="[title]Prompt Settings tab tooltip;Prompts"><i class="fa-solid fa-gears"></i> Prompts</button>
+                <button class="cia-tab-btn" data-tab="tab-recycle" type="button" data-i18n="[title]Image Management tab tooltip;Gallery"><i class="fa-solid fa-images"></i> Gallery</button>
+            </div>
+            <div class="cia-tab-desc" id="cia_tab_desc" data-i18n="Run tab description">
+                Basic switches and status. Toggle auto-generation workflows, manually trigger planning analysis, and configure character references.
             </div>
         </div>
 
-        <div class="cia-section">
-            <div class="cia-section-title">LLM 配置</div>
-            <div class="cia-grid">
-                <label class="cia-field" for="cia_provider_mode">
-                    <span>LLM 来源</span>
-                    <select id="cia_provider_mode" class="text_pole">
-                        <option value="st_current">使用 ST 当前 LLM 设置</option>
-                        <option value="custom_proxy">自定义 OpenAI 兼容端点</option>
-                    </select>
-                </label>
-                <label class="cia-field" for="cia_response_tokens">
-                    <span>最大返回 token</span>
-                    <input id="cia_response_tokens" type="number" min="64" max="4096" step="1" class="text_pole">
-                </label>
-            </div>
-
-            <div id="cia_custom_api_block" class="cia-block">
-                <div class="cia-grid">
-                    <label class="cia-field" for="cia_custom_url">
-                        <span>端点 Base URL</span>
-                        <input id="cia_custom_url" type="text" class="text_pole" placeholder="http://127.0.0.1:5000/v1">
+        <!-- TAB 1: Run & Status -->
+        <div class="cia-tab-content active" id="tab-run">
+            <!-- Section 1: Basic Switches -->
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Basic Switches">Basic Switches</div>
+                <div class="cia-checkbox-grid">
+                    <label class="checkbox_label" for="cia_enabled" data-i18n="[title]Auto Analyze after AI Reply Description;Auto Analyze after AI Reply" title="When enabled, analyzes context after each AI reply to generate prompt candidates.">
+                        <span data-i18n="Auto Analyze after AI Reply">Auto Analyze after AI Reply</span>
+                        <input type="checkbox" id="cia_enabled" class="checkbox">
                     </label>
-                    <label class="cia-field" for="cia_custom_temperature">
-                        <span>温度</span>
-                        <input id="cia_custom_temperature" type="number" min="0" max="2" step="0.05" class="text_pole">
+                    <label class="checkbox_label" for="cia_auto_generate" data-i18n="[title]Auto Generate after Analyze Description;Auto Generate after Analyze" title="When enabled, automatically triggers ComfyUI image generation once the prompt planning is complete.">
+                        <span data-i18n="Auto Generate after Analyze">Auto Generate after Analyze</span>
+                        <input type="checkbox" id="cia_auto_generate" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_auto_generate_on_rebuild" data-i18n="[title]Auto Generate on Rebuild Description;Auto Generate on Rebuild" title="When enabled, automatically triggers ComfyUI image generation after clicking 'Replan' (rebuilding candidate) and completing prompt planning.">
+                        <span data-i18n="Auto Generate on Rebuild">Auto Generate on Rebuild</span>
+                        <input type="checkbox" id="cia_auto_generate_on_rebuild" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_use_st_prompt_preset" data-i18n="[title]Apply ST Prompt Formats Description;Apply ST Prompt Formats (Recommended: Off)" title="When enabled: applies SillyTavern's global roleplay format, chat templates, and injections (may pollute JSON output, and blocks ST main text generation). When disabled (OpenAI compatible API only): bypasses global formats to send clean prompt planning directives running asynchronously.">
+                        <span data-i18n="Apply ST Prompt Formats">Apply ST Prompt Formats (Recommended: Off)</span>
+                        <input type="checkbox" id="cia_use_st_prompt_preset" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_use_json_schema" data-i18n="[title]Enforce JSON Schema Constraint Description;Enforce JSON Schema Constraint" title="Requires the planning model to return strictly structured JSON output. Avoids conversational text or markdown wrappers. (Requires API support for structured outputs/JSON mode, e.g. GPT-4o, Claude 3.5).">
+                        <span data-i18n="Enforce JSON Schema Constraint">Enforce JSON Schema Constraint</span>
+                        <input type="checkbox" id="cia_use_json_schema" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_use_custom_json_schema" data-i18n="[title]Enable Custom JSON Schema Description;Enable Custom JSON Schema" title="When enabled, uses the custom JSON Schema defined below to customize output variables (e.g. LoRAs, aspect ratios).">
+                        <span data-i18n="Enable Custom JSON Schema">Enable Custom JSON Schema</span>
+                        <input type="checkbox" id="cia_use_custom_json_schema" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_prevent_short_llm_images" data-i18n="[title]Prevent Short Reply Generation Description;Prevent Short Reply Generation" title="When enabled, checks the text length of the latest AI reply. Skips automatic generation if it is below the threshold.">
+                        <span data-i18n="Prevent Short Reply Generation">Prevent Short Reply Generation</span>
+                        <input type="checkbox" id="cia_prevent_short_llm_images" class="checkbox">
                     </label>
                 </div>
-
-                <label class="cia-field" for="cia_custom_api_key">
-                    <span>API Key（可留空）</span>
-                    <input id="cia_custom_api_key" type="password" class="text_pole" autocomplete="off" placeholder="sk-...">
-                </label>
-
-                <div class="cia-grid cia-model-row">
-                    <label class="cia-field" for="cia_custom_model">
-                        <span>模型（手填）</span>
-                        <input id="cia_custom_model" type="text" class="text_pole" placeholder="gpt-4o-mini">
+                <div class="cia-grid" style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                    <label class="cia-field" for="cia_short_llm_length_threshold" data-i18n="[title]Short Reply Threshold Description" title="When 'Prevent Short Reply Generation' is enabled, automatic planning will be skipped if the AI message has fewer characters than this threshold.">
+                        <span data-i18n="Short Reply Character Threshold">Short Reply Character Threshold</span>
+                        <input id="cia_short_llm_length_threshold" type="number" min="1" max="1000" step="1" class="text_pole">
                     </label>
-                    <label class="cia-field" for="cia_custom_model_select">
-                        <span>模型（列表）</span>
-                        <select id="cia_custom_model_select" class="text_pole">
-                            <option value="">请先获取模型</option>
+                </div>
+            </div>
+
+            <!-- Section 5: Operations & Status -->
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Operations & Status">Operations & Status</div>
+
+                <div class="cia-actions-vertical">
+                    <button id="cia_analyze_last" class="menu_button" type="button" data-i18n="[title]Force analyze last message tooltip" title="Force prompt planning and image candidate generation for the latest role response.">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> <span data-i18n="Generate Candidate for Last Reply">Generate Candidate for Last Reply</span>
+                    </button>
+                </div>
+
+                <div class="cia-status-panel">
+                    <div class="cia-status-item">
+                        <span class="cia-status-label" data-i18n="Current Status:">Current Status:</span>
+                        <span id="cia_status_value" class="cia-status-badge" data-i18n="idle">idle</span>
+                    </div>
+                    <div class="cia-status-item">
+                        <span class="cia-status-label" data-i18n="Last Result:">Last Result:</span>
+                        <span id="cia_last_result" class="cia-status-text-val" data-i18n="Not run yet">Not run yet</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: LLM Configuration -->
+        <div class="cia-tab-content" id="tab-llm">
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="LLM Configuration">LLM Configuration</div>
+                <div class="cia-grid">
+                    <label class="cia-field" for="cia_provider_mode" data-i18n="[title]LLM Provider Tooltip" title="Specifies which LLM configuration to use as your prompt planner.">
+                        <span data-i18n="LLM Source">LLM Source</span>
+                        <select id="cia_provider_mode" class="text_pole">
+                            <option value="st_current" data-i18n="Use SillyTavern Main LLM Settings">Use SillyTavern Main LLM Settings</option>
+                            <option value="custom_proxy" data-i18n="Use Independent OpenAI Endpoint">Use Independent OpenAI Endpoint</option>
                         </select>
                     </label>
-                </div>
-                <div class="cia-actions">
-                    <button id="cia_fetch_custom_models" class="menu_button" type="button">获取模型</button>
-                </div>
-
-                <div class="cia-grid">
-                    <label class="cia-field" for="cia_api_profile_select">
-                        <span>已保存 API 配置</span>
-                        <select id="cia_api_profile_select" class="text_pole">
-                            <option value="">暂无已保存配置</option>
-                        </select>
+                    <label class="cia-field" for="cia_response_tokens" data-i18n="[title]Max Tokens Tooltip" title="Restricts the tokens returned by the planner model. ~700 is typically sufficient for JSON output.">
+                        <span data-i18n="Max Response Tokens">Max Response Tokens</span>
+                        <input id="cia_response_tokens" type="number" min="64" max="4096" step="1" class="text_pole">
                     </label>
                 </div>
-                <div class="cia-actions">
-                    <button id="cia_api_profile_save" class="menu_button" type="button">保存当前配置</button>
-                    <button id="cia_api_profile_load" class="menu_button" type="button">加载选中配置</button>
-                    <button id="cia_api_profile_delete" class="menu_button" type="button">删除选中配置</button>
+
+                <!-- Custom API block -->
+                <div id="cia_custom_api_block" class="cia-custom-api-container">
+                    <div class="cia-grid">
+                        <label class="cia-field" for="cia_custom_url" data-i18n="[title]Endpoint URL Tooltip" title="OpenAI-compatible endpoint URL, e.g. http://127.0.0.1:5000/v1.">
+                            <span data-i18n="Endpoint Base URL">Endpoint Base URL</span>
+                            <input id="cia_custom_url" type="text" class="text_pole" placeholder="http://127.0.0.1:5000/v1">
+                        </label>
+                        <label class="cia-field" for="cia_custom_temperature" data-i18n="[title]Temperature Tooltip" title="Controls random output variations. Lower temperature (e.g. 0.3) is recommended for strict JSON structures.">
+                            <span data-i18n="Temperature">Temperature</span>
+                            <input id="cia_custom_temperature" type="number" min="0" max="2" step="0.05" class="text_pole">
+                        </label>
+                    </div>
+
+                    <div class="cia-field cia-full-width-field" data-i18n="[title]API Key Tooltip" title="API key for custom endpoint (leave blank if local or not needed).">
+                        <span data-i18n="API Key (Optional)">API Key (Optional)</span>
+                        <input id="cia_custom_api_key" type="password" class="text_pole" autocomplete="off" placeholder="sk-...">
+                    </div>
+
+                    <div class="cia-grid cia-model-row">
+                        <label class="cia-field" for="cia_custom_model" data-i18n="[title]Model Name Tooltip" title="Target model identifier (e.g. gpt-4o-mini or deepseek-chat).">
+                            <span data-i18n="Model Name (Manual)">Model Name (Manual)</span>
+                            <input id="cia_custom_model" type="text" class="text_pole" placeholder="gpt-4o-mini">
+                        </label>
+                        <label class="cia-field" for="cia_custom_model_select" data-i18n="[title]Model Select Dropdown Tooltip" title="Select a model from list retrieved from the endpoint.">
+                            <span data-i18n="Available Model List">Available Model List</span>
+                            <select id="cia_custom_model_select" class="text_pole">
+                                <option value="" data-i18n="Fetch models first">Fetch models first</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <button id="cia_fetch_custom_models" class="menu_button cia-full-width-btn" type="button" data-i18n="[title]Fetch Models Tooltip" title="Fetch model list from custom endpoint.">
+                        <i class="fa-solid fa-arrows-rotate"></i> <span data-i18n="Fetch/Refresh Model List">Fetch/Refresh Model List</span>
+                    </button>
+
+                    <div class="cia-profile-row-inline">
+                        <label class="cia-field flex-grow" for="cia_api_profile_select" data-i18n="[title]Saved Profiles Tooltip" title="Choose a saved custom endpoint profile.">
+                            <span data-i18n="Saved API Profiles">Saved API Profiles</span>
+                            <select id="cia_api_profile_select" class="text_pole">
+                                <option value="" data-i18n="No profiles saved">No profiles saved</option>
+                            </select>
+                        </label>
+                        <div class="cia-profile-icon-buttons">
+                            <button id="cia_api_profile_load" class="menu_button icon-btn" type="button" data-i18n="[title]Load selected profile" title="Load selected profile"><i class="fa-solid fa-folder-open"></i></button>
+                            <button id="cia_api_profile_save" class="menu_button icon-btn" type="button" data-i18n="[title]Save current configuration" title="Save current configuration"><i class="fa-solid fa-floppy-disk"></i></button>
+                            <button id="cia_api_profile_delete" class="menu_button icon-btn type_delete" type="button" data-i18n="[title]Delete selected profile" title="Delete selected profile"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="cia-section">
-            <div class="cia-section-title">上下文设置</div>
-            <div class="cia-grid">
-                <label class="cia-field" for="cia_context_messages"><span>截取最近消息数</span><input id="cia_context_messages" type="number" min="1" max="200" step="1" class="text_pole"></label>
-                <label class="cia-field" for="cia_context_chars"><span>最大上下文字符数（0=不限制）</span><input id="cia_context_chars" type="number" min="0" max="100000" step="100" class="text_pole"></label>
-            </div>
-            <div class="cia-grid">
-                <label class="cia-field" for="cia_min_prompt_chars"><span>最短有效提示词字符数</span><input id="cia_min_prompt_chars" type="number" min="0" max="1000" step="1" class="text_pole"></label>
-            </div>
-            <div class="cia-row">
-                <label class="checkbox_label" for="cia_include_system"><span>包含系统消息</span><input type="checkbox" id="cia_include_system" class="checkbox"></label>
-                <label class="checkbox_label" for="cia_include_names"><span>保留发言者名称</span><input type="checkbox" id="cia_include_names" class="checkbox"></label>
-            </div>
-        </div>
-
-        <div class="cia-section">
-            <div class="cia-section-title">提示词</div>
-            <label class="cia-field" for="cia_system_prompt"><span>发送给 LLM 的开头提示词</span><textarea id="cia_system_prompt" class="text_pole textarea_compact" rows="10"></textarea></label>
-            <label class="cia-field" for="cia_prepend_message"><span>追加消息 / 补充信息（最前）</span><textarea id="cia_prepend_message" class="text_pole textarea_compact" rows="5"></textarea></label>
-            <label class="cia-field" for="cia_custom_json_schema"><span>自定义 JSON Schema（支持完整结构 {name,strict,value/schema} 或仅 schema）</span><textarea id="cia_custom_json_schema" class="text_pole textarea_compact" rows="12"></textarea></label>
-            <div class="cia-grid">
-                <label class="cia-field" for="cia_schema_profile_select">
-                    <span>已保存强制格式</span>
-                    <select id="cia_schema_profile_select" class="text_pole">
-                        <option value="">暂无已保存格式</option>
-                    </select>
-                </label>
-            </div>
-            <div class="cia-actions">
-                <button id="cia_schema_profile_save" class="menu_button" type="button">保存当前格式</button>
-                <button id="cia_schema_profile_load" class="menu_button" type="button">加载选中格式</button>
-                <button id="cia_schema_profile_delete" class="menu_button" type="button">删除选中格式</button>
+        <!-- TAB 3: Context Settings -->
+        <div class="cia-tab-content" id="tab-context">
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Context Settings">Context Settings</div>
+                <div class="cia-grid-3-equal">
+                    <label class="cia-field" for="cia_context_messages" data-i18n="[title]Context Messages Tooltip" title="Number of recent chat messages sent to prompt planner.">
+                        <span data-i18n="Context Message Count">Context Message Count</span>
+                        <input id="cia_context_messages" type="number" min="1" max="200" step="1" class="text_pole">
+                    </label>
+                    <label class="cia-field" for="cia_context_chars" data-i18n="[title]Context Characters Tooltip" title="Maximum characters allowed in prompt builder. Older context is truncated if exceeded. 0 means unlimited.">
+                        <span data-i18n="Max Context Characters">Max Context Characters</span>
+                        <input id="cia_context_chars" type="number" min="0" max="100000" step="100" class="text_pole">
+                    </label>
+                    <label class="cia-field" for="cia_min_prompt_chars" data-i18n="[title]Min Prompt Chars Tooltip" title="If generated image prompt length is below this value, the generation is skipped. Avoids empty/useless generations.">
+                        <span data-i18n="Min Prompt Characters">Min Prompt Characters</span>
+                        <input id="cia_min_prompt_chars" type="number" min="0" max="1000" step="1" class="text_pole">
+                    </label>
+                </div>
+                <div class="cia-checkbox-grid">
+                    <label class="checkbox_label" for="cia_include_system" data-i18n="[title]Include System Messages Description;Include System Messages">
+                        <span data-i18n="Include System Messages">Include System Messages</span>
+                        <input type="checkbox" id="cia_include_system" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_include_names" data-i18n="[title]Keep Speaker Names Description;Keep Speaker Names">
+                        <span data-i18n="Keep Speaker Names">Keep Speaker Names</span>
+                        <input type="checkbox" id="cia_include_names" class="checkbox">
+                    </label>
+                </div>
             </div>
         </div>
 
-        <div class="cia-section">
-            <div class="cia-section-title">操作与状态</div>
-            <div class="cia-actions">
-                <button id="cia_character_reference" class="menu_button" type="button">人物特征参考</button>
-                <button id="cia_analyze_last" class="menu_button" type="button">为最后一层生成候选</button>
-                <button id="cia_restore_prompt" class="menu_button" type="button">恢复默认提示词</button>
+        <!-- TAB 4: Prompts & Templates -->
+        <div class="cia-tab-content" id="tab-prompt">
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Prompts & Templates">Prompts & Templates</div>
+
+                <div class="cia-popup-edit-row">
+                    <button id="cia_character_reference" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Character reference settings tooltip" title="Configure visual descriptors (e.g., hairstyle, dress style, facial features) for the character/group to be permanently included as generator parameters.">
+                        <i class="fa-solid fa-user-gear"></i> <span data-i18n="Configure Character Reference">Configure Character Reference</span>
+                    </button>
+                </div>
+                <div id="cia_reference_status" class="cia-reference-note" style="margin-bottom: 6px;"></div>
+
+                <div class="cia-popup-edit-row">
+                    <button id="cia_edit_system_prompt_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]System Prompt Edit Tooltip" title="Edit instruction headers sent to LLM planner specifying output format limits.">
+                        <i class="fa-solid fa-pen-to-square"></i> <span data-i18n="Configure System Prompt">Configure System Prompt</span>
+                    </button>
+                    <textarea id="cia_system_prompt" style="display: none;"></textarea>
+                </div>
+
+                <div class="cia-popup-edit-row">
+                    <button id="cia_edit_json_schema_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Custom JSON Schema Tooltip" title="Edit JSON output constraints. Allows injecting extra weights like custom LoRAs or aspect ratios.">
+                        <i class="fa-solid fa-code"></i> <span data-i18n="Configure Custom JSON Schema">Configure Custom JSON Schema</span>
+                    </button>
+                    <textarea id="cia_custom_json_schema" style="display: none;"></textarea>
+                </div>
+
+                <div class="cia-field cia-textarea-field" data-i18n="[title]Prepend Prompt Directives Tooltip" title="Fixed instructions appended to the front of prompts, e.g. quality tags (masterpiece, highly detailed).">
+                    <span data-i18n="Global Prepend Prompt / Quality Tags">Global Prepend Prompt / Quality Tags</span>
+                    <textarea id="cia_prepend_message" class="text_pole textarea_compact" rows="3" placeholder="e.g. masterpiece, extremely detailed, cinematic lighting..."></textarea>
+                </div>
             </div>
-            <div id="cia_reference_status" class="cia-note"></div>
-            <div class="cia-status">
-                <div><strong>状态:</strong> <span id="cia_status_value">idle</span></div>
-                <div><strong>最后结果:</strong> <span id="cia_last_result">尚未运行</span></div>
+
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Format Maintenance">Format Maintenance</div>
+                <div class="cia-actions-vertical">
+                    <button id="cia_restore_prompt" class="menu_button" type="button" data-i18n="[title]Restore Default Prompt Tooltip" title="Resets LLM System Prompt back to original out-of-the-box settings.">
+                        <i class="fa-solid fa-rotate-left"></i> <span data-i18n="Restore Default System Prompt">Restore Default System Prompt</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: Image Management -->
+        <div class="cia-tab-content" id="tab-recycle">
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Maintenance Settings">Maintenance Settings</div>
+                <div class="cia-checkbox-grid">
+                    <label class="checkbox_label" for="cia_auto_clear" data-i18n="[title]Auto Clear Unshown Description;Auto Clear Unshown Images" title="When a new image is generated, auto-moves older, unshown candidate attachments to the recycle bin.">
+                        <span data-i18n="Auto Clear Unshown Images">Auto Clear Unshown Images</span>
+                        <input type="checkbox" id="cia_auto_clear" class="checkbox">
+                    </label>
+                </div>
+                <div class="cia-actions-vertical">
+                    <button id="cia_clear_current_chat" class="menu_button" type="button" data-i18n="[title]Move unshown images to Recycle Bin" title="Move unshown images to Recycle Bin">
+                        <i class="fa-solid fa-broom"></i> <span data-i18n="Clean Unshown Images in Chat">Clean Unshown Images in Chat</span>
+                    </button>
+                    <button id="cia_empty_recycle" class="menu_button type_delete" type="button" data-i18n="[title]Permanently empty Recycle Bin" title="Permanently empty Recycle Bin">
+                        <i class="fa-solid fa-trash-can"></i> <span data-i18n="Empty Recycle Bin">Empty Recycle Bin</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Session Gallery -->
+            <div class="cia-section">
+                <div class="cia-section-title cia-collapse-header" data-target="#cia_gallery_grid" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+                    <span style="display: flex; align-items: center; gap: 6px; user-select: none;">
+                        <i class="fa-solid fa-chevron-down cia-collapse-arrow"></i> <span data-i18n="Session Gallery">Session Gallery</span> (<span id="cia_gallery_count">0</span>)
+                    </span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button id="cia_save_gallery" class="menu_button" type="button" data-i18n="[title]Save manual gallery changes" title="Save manual gallery changes" style="margin: 0; padding: 2px 8px; font-size: 0.82em; height: auto; width: auto; min-height: 24px; display: none; align-items: center; gap: 4px; background: var(--SmartThemeQuoteColor, #78beff); color: #000; font-weight: bold;">
+                            <i class="fa-solid fa-floppy-disk"></i> <span data-i18n="Save Changes">Save Changes</span>
+                        </button>
+                        <button id="cia_open_gallery_large_grid" class="menu_button" type="button" data-i18n="[title]Open fullscreen gallery view" title="Open fullscreen gallery view" style="margin: 0; padding: 2px 8px; font-size: 0.82em; height: auto; width: auto; min-height: 24px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class="fa-solid fa-table-cells"></i> <span data-i18n="Enter Large Grid Gallery">Enter Large Grid Gallery</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="cia_gallery_grid_container">
+                    <div class="cia-filter-bar" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 6px; background: rgba(0,0,0,0.15); border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.03);">
+                        <label class="checkbox_label" for="cia_gallery_filter_fav" style="margin: 0; padding: 4px 8px; font-size: 0.82em; min-height: auto; width: auto; display: inline-flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 4px;">
+                            <span data-i18n="Favorites Only">Favorites Only</span>
+                            <input type="checkbox" id="cia_gallery_filter_fav" class="checkbox" style="margin: 0;">
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-grow: 1; min-width: 180px;">
+                            <span style="font-size: 0.82em; opacity: 0.8; white-space: nowrap;" data-i18n="Floor Filter:">Floor Filter:</span>
+                            <input type="text" id="cia_gallery_filter_floor" class="text_pole" placeholder="e.g. 1-5, CUR \ 3" style="margin: 0; height: 26px; font-size: 0.82em; padding: 2px 6px; flex-grow: 1;">
+                            <button id="cia_gallery_filter_help" class="menu_button" type="button" data-i18n="[title]Filter Help" title="Filter syntax documentation" style="margin: 0; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 0.82em; flex-shrink: 0;">
+                                <i class="fa-solid fa-circle-question"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="cia_gallery_grid" class="cia-recycle-grid cia-collapse-content">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recycle Bin -->
+            <div class="cia-section">
+                <div class="cia-section-title cia-collapse-header" data-target="#cia_recycle_grid_container" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+                    <span style="display: flex; align-items: center; gap: 6px; user-select: none;">
+                        <i class="fa-solid fa-chevron-down cia-collapse-arrow"></i> <span data-i18n="Recycle Bin">Recycle Bin</span> (<span id="cia_recycle_count">0</span>)
+                    </span>
+                    <button id="cia_open_large_grid" class="menu_button" type="button" data-i18n="[title]Open fullscreen Recycle Bin grid" title="Open fullscreen Recycle Bin grid" style="margin: 0; padding: 2px 8px; font-size: 0.82em; height: auto; width: auto; min-height: 24px; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid fa-table-cells"></i> <span data-i18n="Enter Large Grid Recycle Bin">Enter Large Grid Recycle Bin</span>
+                    </button>
+                </div>
+                <div id="cia_recycle_grid_container" class="cia-collapse-content">
+                    <div id="cia_recycle_grid" class="cia-recycle-grid">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
