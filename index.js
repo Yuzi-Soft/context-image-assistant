@@ -4392,7 +4392,8 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
                         <i class="fa-solid fa-floppy-disk"></i> <span data-i18n="Save Changes">Save Changes</span>
                     </button>
                     ` : ''}
-                    <div class="cia-large-grid-column-picker" title="Images per row" data-i18n="[title]Images per row" style="display: flex; gap: 4px;">
+                    <div class="cia-large-grid-column-picker" title="Images per row" data-i18n="[title]Images per row" style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 0.72em; font-weight: 500; opacity: 0.65; padding: 0 4px;" data-i18n="Per Row">Per Row</span>
                         ${[2, 3, 4, 5, 6, 7, 8].map(value => `
                             <button class="menu_button cia-grid-col-btn ${value === columns ? 'active' : ''}" type="button" data-cols="${value}">${value}</button>
                         `).join('')}

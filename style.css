@@ -774,13 +774,7 @@
     flex-shrink: 0;
 }
 
-.cia-large-grid-column-picker::before {
-    content: "每行";
-    font-size: 0.72em;
-    font-weight: 500;
-    opacity: 0.65;
-    padding: 0 4px;
-}
+
 
 .cia-grid-col-btn {
     width: 28px !important;
