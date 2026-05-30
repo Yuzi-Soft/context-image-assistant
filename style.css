@@ -1077,7 +1077,7 @@
     position: relative !important;
     width: 90vw !important;
     max-width: 1200px !important;
-    min-width: 850px !important;
+    min-width: min(850px, 96vw) !important;
 }
 
 .popup:has(.cia-large-grid-popup-wrapper) {
