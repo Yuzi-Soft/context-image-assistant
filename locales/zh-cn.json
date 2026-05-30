@@ -1,5 +1,6 @@
 {
     "Basic Toggles": "基础开关",
+    "Basic Switches": "基础开关",
     "Auto Analyze after AI Reply": "AI 回复后自动分析",
     "Auto Analyze after AI Reply Description": "开启后，每次收到 AI 回复时，插件会自动在后台分析当前对话上下文并生成提示词候选。",
     "Auto Generate after Analyze": "分析完成后自动生图",

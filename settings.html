@@ -7,11 +7,11 @@
         <!-- Tab Bar Control Row -->
         <div class="cia-tab-container">
             <div class="cia-tab-row">
-                <button class="cia-tab-btn active" data-tab="tab-run" type="button" data-i18n="[title]Run tab tooltip;Run"><i class="fa-solid fa-play"></i> Run</button>
-                <button class="cia-tab-btn" data-tab="tab-llm" type="button" data-i18n="[title]LLM Settings tab tooltip;LLM"><i class="fa-solid fa-server"></i> LLM</button>
-                <button class="cia-tab-btn" data-tab="tab-context" type="button" data-i18n="[title]Context Settings tab tooltip;Context"><i class="fa-solid fa-comment-dots"></i> Context</button>
-                <button class="cia-tab-btn" data-tab="tab-prompt" type="button" data-i18n="[title]Prompt Settings tab tooltip;Prompts"><i class="fa-solid fa-gears"></i> Prompts</button>
-                <button class="cia-tab-btn" data-tab="tab-recycle" type="button" data-i18n="[title]Image Management tab tooltip;Gallery"><i class="fa-solid fa-images"></i> Gallery</button>
+                <button class="cia-tab-btn active" data-tab="tab-run" type="button" data-i18n="[title]Run tab tooltip"><i class="fa-solid fa-play"></i> <span data-i18n="Run">Run</span></button>
+                <button class="cia-tab-btn" data-tab="tab-llm" type="button" data-i18n="[title]LLM Settings tab tooltip"><i class="fa-solid fa-server"></i> <span data-i18n="LLM">LLM</span></button>
+                <button class="cia-tab-btn" data-tab="tab-context" type="button" data-i18n="[title]Context Settings tab tooltip"><i class="fa-solid fa-comment-dots"></i> <span data-i18n="Context">Context</span></button>
+                <button class="cia-tab-btn" data-tab="tab-prompt" type="button" data-i18n="[title]Prompt Settings tab tooltip"><i class="fa-solid fa-gears"></i> <span data-i18n="Prompts">Prompts</span></button>
+                <button class="cia-tab-btn" data-tab="tab-recycle" type="button" data-i18n="[title]Image Management tab tooltip"><i class="fa-solid fa-images"></i> <span data-i18n="Gallery">Gallery</span></button>
             </div>
             <div class="cia-tab-desc" id="cia_tab_desc" data-i18n="Run tab description">
                 Basic switches and status. Toggle auto-generation workflows, manually trigger planning analysis, and configure character references.
@@ -24,31 +24,31 @@
             <div class="cia-section">
                 <div class="cia-section-title" data-i18n="Basic Switches">Basic Switches</div>
                 <div class="cia-checkbox-grid">
-                    <label class="checkbox_label" for="cia_enabled" data-i18n="[title]Auto Analyze after AI Reply Description;Auto Analyze after AI Reply" title="When enabled, analyzes context after each AI reply to generate prompt candidates.">
+                    <label class="checkbox_label" for="cia_enabled" data-i18n="[title]Auto Analyze after AI Reply Description" title="When enabled, analyzes context after each AI reply to generate prompt candidates.">
                         <span data-i18n="Auto Analyze after AI Reply">Auto Analyze after AI Reply</span>
                         <input type="checkbox" id="cia_enabled" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_auto_generate" data-i18n="[title]Auto Generate after Analyze Description;Auto Generate after Analyze" title="When enabled, automatically triggers ComfyUI image generation once the prompt planning is complete.">
+                    <label class="checkbox_label" for="cia_auto_generate" data-i18n="[title]Auto Generate after Analyze Description" title="When enabled, automatically triggers ComfyUI image generation once the prompt planning is complete.">
                         <span data-i18n="Auto Generate after Analyze">Auto Generate after Analyze</span>
                         <input type="checkbox" id="cia_auto_generate" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_auto_generate_on_rebuild" data-i18n="[title]Auto Generate on Rebuild Description;Auto Generate on Rebuild" title="When enabled, automatically triggers ComfyUI image generation after clicking 'Replan' (rebuilding candidate) and completing prompt planning.">
+                    <label class="checkbox_label" for="cia_auto_generate_on_rebuild" data-i18n="[title]Auto Generate on Rebuild Description" title="When enabled, automatically triggers ComfyUI image generation after clicking 'Replan' (rebuilding candidate) and completing prompt planning.">
                         <span data-i18n="Auto Generate on Rebuild">Auto Generate on Rebuild</span>
                         <input type="checkbox" id="cia_auto_generate_on_rebuild" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_use_st_prompt_preset" data-i18n="[title]Apply ST Prompt Formats Description;Apply ST Prompt Formats (Recommended: Off)" title="When enabled: applies SillyTavern's global roleplay format, chat templates, and injections (may pollute JSON output, and blocks ST main text generation). When disabled (OpenAI compatible API only): bypasses global formats to send clean prompt planning directives running asynchronously.">
+                    <label class="checkbox_label" for="cia_use_st_prompt_preset" data-i18n="[title]Apply ST Prompt Formats Description" title="When enabled: applies SillyTavern's global roleplay format, chat templates, and injections (may pollute JSON output, and blocks ST main text generation). When disabled (OpenAI compatible API only): bypasses global formats to send clean prompt planning directives running asynchronously.">
                         <span data-i18n="Apply ST Prompt Formats">Apply ST Prompt Formats (Recommended: Off)</span>
                         <input type="checkbox" id="cia_use_st_prompt_preset" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_use_json_schema" data-i18n="[title]Enforce JSON Schema Constraint Description;Enforce JSON Schema Constraint" title="Requires the planning model to return strictly structured JSON output. Avoids conversational text or markdown wrappers. (Requires API support for structured outputs/JSON mode, e.g. GPT-4o, Claude 3.5).">
+                    <label class="checkbox_label" for="cia_use_json_schema" data-i18n="[title]Enforce JSON Schema Constraint Description" title="Requires the planning model to return strictly structured JSON output. Avoids conversational text or markdown wrappers. (Requires API support for structured outputs/JSON mode, e.g. GPT-4o, Claude 3.5).">
                         <span data-i18n="Enforce JSON Schema Constraint">Enforce JSON Schema Constraint</span>
                         <input type="checkbox" id="cia_use_json_schema" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_use_custom_json_schema" data-i18n="[title]Enable Custom JSON Schema Description;Enable Custom JSON Schema" title="When enabled, uses the custom JSON Schema defined below to customize output variables (e.g. LoRAs, aspect ratios).">
+                    <label class="checkbox_label" for="cia_use_custom_json_schema" data-i18n="[title]Enable Custom JSON Schema Description" title="When enabled, uses the custom JSON Schema defined below to customize output variables (e.g. LoRAs, aspect ratios).">
                         <span data-i18n="Enable Custom JSON Schema">Enable Custom JSON Schema</span>
                         <input type="checkbox" id="cia_use_custom_json_schema" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_prevent_short_llm_images" data-i18n="[title]Prevent Short Reply Generation Description;Prevent Short Reply Generation" title="When enabled, checks the text length of the latest AI reply. Skips automatic generation if it is below the threshold.">
+                    <label class="checkbox_label" for="cia_prevent_short_llm_images" data-i18n="[title]Prevent Short Reply Generation Description" title="When enabled, checks the text length of the latest AI reply. Skips automatic generation if it is below the threshold.">
                         <span data-i18n="Prevent Short Reply Generation">Prevent Short Reply Generation</span>
                         <input type="checkbox" id="cia_prevent_short_llm_images" class="checkbox">
                     </label>
@@ -173,11 +173,11 @@
                     </label>
                 </div>
                 <div class="cia-checkbox-grid">
-                    <label class="checkbox_label" for="cia_include_system" data-i18n="[title]Include System Messages Description;Include System Messages">
+                    <label class="checkbox_label" for="cia_include_system" data-i18n="[title]Include System Messages Description">
                         <span data-i18n="Include System Messages">Include System Messages</span>
                         <input type="checkbox" id="cia_include_system" class="checkbox">
                     </label>
-                    <label class="checkbox_label" for="cia_include_names" data-i18n="[title]Keep Speaker Names Description;Keep Speaker Names">
+                    <label class="checkbox_label" for="cia_include_names" data-i18n="[title]Keep Speaker Names Description">
                         <span data-i18n="Keep Speaker Names">Keep Speaker Names</span>
                         <input type="checkbox" id="cia_include_names" class="checkbox">
                     </label>
@@ -232,7 +232,7 @@
             <div class="cia-section">
                 <div class="cia-section-title" data-i18n="Maintenance Settings">Maintenance Settings</div>
                 <div class="cia-checkbox-grid">
-                    <label class="checkbox_label" for="cia_auto_clear" data-i18n="[title]Auto Clear Unshown Description;Auto Clear Unshown Images" title="When a new image is generated, auto-moves older, unshown candidate attachments to the recycle bin.">
+                    <label class="checkbox_label" for="cia_auto_clear" data-i18n="[title]Auto Clear Unshown Description">
                         <span data-i18n="Auto Clear Unshown Images">Auto Clear Unshown Images</span>
                         <input type="checkbox" id="cia_auto_clear" class="checkbox">
                     </label>
