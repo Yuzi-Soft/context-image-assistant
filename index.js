@@ -28,7 +28,16 @@ import { sendOpenAIRequest } from '../../../openai.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
-import { t, applyLocale } from '../../../i18n.js';
+import { t as i18nT, translate, applyLocale } from '../../../i18n.js';
+
+// A compatible t function that supports both tagged template literals and normal string calls
+function t(strings, ...values) {
+    if (Array.isArray(strings)) {
+        return i18nT(strings, ...values);
+    }
+    return translate(strings);
+}
+
 
 export { MODULE_NAME };
 
@@ -599,12 +608,13 @@ async function createSettingsUi() {
     });
 
     // Bind large grid buttons
-    $(`#${PANEL_CONTAINER_ID} #cia_open_gallery_large_grid`).on('click', () => {
+    panel.on('click.ciaSettings', '#cia_open_gallery_large_grid', () => {
         showGalleryLargeGridPreview('gallery');
     });
-    $(`#${PANEL_CONTAINER_ID} #cia_open_large_grid`).on('click', () => {
+    panel.on('click.ciaSettings', '#cia_open_large_grid', () => {
         showGalleryLargeGridPreview('recycle');
     });
+
 
     // Bind sweep / empty buttons
     $(`#${PANEL_CONTAINER_ID} #cia_clear_current_chat`).on('click', async () => {
@@ -4598,7 +4608,7 @@ function renderGalleryList() {
     currentGalleryItems = items;
 
     if (items.length === 0) {
-        grid.append(applyLocale($('<div class="cia-recycle-empty" data-i18n="No images">No images</div>')));
+        grid.append($(applyLocale('<div class="cia-recycle-empty" data-i18n="No images">No images</div>')));
         return;
     }
 
@@ -4651,7 +4661,7 @@ function renderRecycleBinList() {
     grid.empty();
 
     if (items.length === 0) {
-        grid.append(applyLocale($('<div class="cia-recycle-empty" data-i18n="Recycle bin is empty">Recycle bin is empty</div>')));
+        grid.append($(applyLocale('<div class="cia-recycle-empty" data-i18n="Recycle bin is empty">Recycle bin is empty</div>')));
         return;
     }
 
