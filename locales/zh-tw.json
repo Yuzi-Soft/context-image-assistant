@@ -321,5 +321,20 @@
     "Exclude Example 2": "<code style=\"font-family: monospace;\">ALL \\\\ CUR</code> : 匹配除當前最新樓層外的所有歷史圖片。",
     "Exclude Example 3": "<code style=\"font-family: monospace;\">ALL \\\\ FAV</code> : 匹配除已收藏外的所有歷史圖片。",
     "Exclude Example 4": "<code style=\"font-family: monospace;\">1-10 \\\\ 3-5</code> : 匹配 1 至 10 樓，但排除 3 到 5 樓。",
-    "e.g., 1-5, CUR \\\\ 3 (click ? on right)": "如 1-5, CUR \\\\ 3 (點擊右側?)"
+    "e.g., 1-5, CUR \\\\ 3 (click ? on right)": "如 1-5, CUR \\\\ 3 (點擊右側?)",
+    "Prompt Inspector": "提示詞檢查器",
+    "Prompt Inspector Intro": "這是如果在此刻發送請求，將發送給規劃 LLM 的最終原始提示詞。",
+    "System Prompt": "系統提示詞",
+    "User Prompt & Context": "用戶提示詞與上下文",
+    "JSON Schema Constraint": "JSON Schema 約束",
+    "Copied to clipboard!": "已複製到剪貼簿！",
+    "Copy System Prompt": "複製系統提示詞",
+    "Copy User Prompt": "複製用戶提示詞",
+    "Copy JSON Schema": "複製 JSON Schema",
+    "No character reply available to inspect.": "沒有可檢查的角色回覆。",
+    "Inspect Prompts": "檢查提示詞",
+    "Filter Candidate JSON in Main Chat": "主聊天發送時過濾候選 JSON",
+    "Filter CIA JSON from Main Description": "啟用後，在發送消息給酒館主聊天 LLM 之前，會自動過濾掉 ComfyUI 候選 JSON 代碼塊。防止上下文污染。",
+    "Filter Candidate JSON in Planner Context": "規劃器上下文過濾候選 JSON",
+    "Filter CIA JSON from Plugin Description": "啟用後，在發送消息給提示詞規劃 LLM 之前，會自動過濾掉上下文中的 ComfyUI 候選 JSON 代碼塊。防止模型複讀。"
 }

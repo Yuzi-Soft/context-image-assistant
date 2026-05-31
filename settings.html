@@ -69,6 +69,9 @@
                     <button id="cia_analyze_last" class="menu_button" type="button" data-i18n="[title]Force analyze last message tooltip" title="Force prompt planning and image candidate generation for the latest role response.">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> <span data-i18n="Generate Candidate for Last Reply">Generate Candidate for Last Reply</span>
                     </button>
+                    <button id="cia_inspect_prompts" class="menu_button" type="button" data-i18n="[title]Inspect current raw planner prompts" title="View the final raw prompts that would be sent to the planning LLM.">
+                        <i class="fa-solid fa-eye"></i> <span data-i18n="Inspect Prompts">Inspect Prompts</span>
+                    </button>
                 </div>
 
                 <div class="cia-status-panel">
@@ -181,6 +184,14 @@
                         <span data-i18n="Keep Speaker Names">Keep Speaker Names</span>
                         <input type="checkbox" id="cia_include_names" class="checkbox">
                     </label>
+                    <label class="checkbox_label" for="cia_filter_cia_json_from_main" data-i18n="[title]Filter CIA JSON from Main Description" title="When enabled, strips ComfyUI candidate JSON blocks from messages before sending them to the main Tavern chat LLM. Prevents context contamination.">
+                        <span data-i18n="Filter Candidate JSON in Main Chat">Filter Candidate JSON in Main Chat</span>
+                        <input type="checkbox" id="cia_filter_cia_json_from_main" class="checkbox">
+                    </label>
+                    <label class="checkbox_label" for="cia_filter_cia_json_from_plugin" data-i18n="[title]Filter CIA JSON from Plugin Description" title="When enabled, strips ComfyUI candidate JSON blocks from context messages before sending them to the planning LLM. Prevents model repetition.">
+                        <span data-i18n="Filter Candidate JSON in Planner Context">Filter Candidate JSON in Planner Context</span>
+                        <input type="checkbox" id="cia_filter_cia_json_from_plugin" class="checkbox">
+                    </label>
                 </div>
             </div>
         </div>
@@ -249,7 +260,7 @@
 
             <!-- Session Gallery -->
             <div class="cia-section">
-                <div class="cia-section-title cia-collapse-header" data-target="#cia_gallery_grid" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+                <div class="cia-section-title cia-collapse-header" data-target="#cia_gallery_grid_sub_container" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                     <span style="display: flex; align-items: center; gap: 6px; user-select: none;">
                         <i class="fa-solid fa-chevron-down cia-collapse-arrow"></i> <span data-i18n="Session Gallery">Session Gallery</span> (<span id="cia_gallery_count">0</span>)
                     </span>
@@ -276,8 +287,10 @@
                             </button>
                         </div>
                     </div>
-                    <div id="cia_gallery_grid" class="cia-recycle-grid cia-collapse-content">
-                        <!-- Dynamic content -->
+                    <div id="cia_gallery_grid_sub_container" class="cia-collapse-content">
+                        <div id="cia_gallery_grid" class="cia-recycle-grid">
+                            <!-- Dynamic content -->
+                        </div>
                     </div>
                 </div>
             </div>

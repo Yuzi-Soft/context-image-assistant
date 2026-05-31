@@ -99,6 +99,8 @@ const DEFAULT_SETTINGS = {
     largeGridColumns: 3,
     preventShortLlmImages: false,
     shortLlmLengthThreshold: 10,
+    filterCiaJsonFromMain: false,
+    filterCiaJsonFromPlugin: false,
 };
 
 const IMAGE_JSON_SCHEMA = {
@@ -382,6 +384,8 @@ function updateStatusUi() {
 
     $('#cia_include_system').prop('checked', settings.includeSystem);
     $('#cia_include_names').prop('checked', settings.includeNames);
+    $('#cia_filter_cia_json_from_main').prop('checked', settings.filterCiaJsonFromMain);
+    $('#cia_filter_cia_json_from_plugin').prop('checked', settings.filterCiaJsonFromPlugin);
     $('#cia_system_prompt').val(settings.systemPrompt);
     $('#cia_prepend_message').val(settings.prependMessage);
     $('#cia_custom_json_schema').val(settings.customJsonSchema || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2));
@@ -416,6 +420,8 @@ function saveFromUi() {
     normalizeLoraRangeSettings(settings);
     settings.includeSystem = !!$('#cia_include_system').prop('checked');
     settings.includeNames = !!$('#cia_include_names').prop('checked');
+    settings.filterCiaJsonFromMain = !!$('#cia_filter_cia_json_from_main').prop('checked');
+    settings.filterCiaJsonFromPlugin = !!$('#cia_filter_cia_json_from_plugin').prop('checked');
     settings.systemPrompt = String($('#cia_system_prompt').val() || DEFAULT_SYSTEM_PROMPT);
     settings.prependMessage = String($('#cia_prepend_message').val() || '');
     settings.customJsonSchema = String($('#cia_custom_json_schema').val() || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
@@ -443,7 +449,7 @@ async function createSettingsUi() {
     panel.off('.ciaSettings');
     panel.empty().append(html);
 
-    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images').on('change', saveFromUi);
+    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_filter_cia_json_from_main, #cia_filter_cia_json_from_plugin, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images').on('change', saveFromUi);
     $('#cia_provider_mode, #cia_response_tokens, #cia_custom_url, #cia_custom_model, #cia_custom_api_key, #cia_custom_temperature, #cia_context_messages, #cia_context_chars, #cia_min_prompt_chars, #cia_system_prompt, #cia_prepend_message, #cia_custom_json_schema, #cia_short_llm_length_threshold').on('input change', saveFromUi);
     $('#cia_custom_model_select').on('change', function () {
         const value = String($(this).val() || '').trim();
@@ -521,6 +527,10 @@ async function createSettingsUi() {
         }
         await requestImageCandidate(messageId, { force: true, manual: true });
     });
+    $('#cia_inspect_prompts').on('click', async () => {
+        await showPromptInspector();
+    });
+
 
     panel.on('click.ciaSettings', '#cia_save_gallery', async function () {
         if (hasUnsavedGalleryChanges) {
@@ -569,7 +579,7 @@ async function createSettingsUi() {
         const arrow = $(this).find('.cia-collapse-arrow');
         const settings = ensureSettings();
 
-        if (targetSelector === '#cia_gallery_grid') {
+        if (targetSelector === '#cia_gallery_grid_sub_container') {
             settings.galleryCollapsed = !settings.galleryCollapsed;
             arrow.toggleClass('collapsed', settings.galleryCollapsed);
             container.slideToggle(200, () => {
@@ -588,11 +598,11 @@ async function createSettingsUi() {
     // Apply initial collapse states
     const settings = ensureSettings();
     if (settings.galleryCollapsed) {
-        $(`#${PANEL_CONTAINER_ID} [data-target="#cia_gallery_grid"] .cia-collapse-arrow`).addClass('collapsed');
-        $(`#${PANEL_CONTAINER_ID} #cia_gallery_grid`).hide();
+        $(`#${PANEL_CONTAINER_ID} [data-target="#cia_gallery_grid_sub_container"] .cia-collapse-arrow`).addClass('collapsed');
+        $(`#${PANEL_CONTAINER_ID} #cia_gallery_grid_sub_container`).hide();
     } else {
-        $(`#${PANEL_CONTAINER_ID} [data-target="#cia_gallery_grid"] .cia-collapse-arrow`).removeClass('collapsed');
-        $(`#${PANEL_CONTAINER_ID} #cia_gallery_grid`).show();
+        $(`#${PANEL_CONTAINER_ID} [data-target="#cia_gallery_grid_sub_container"] .cia-collapse-arrow`).removeClass('collapsed');
+        $(`#${PANEL_CONTAINER_ID} #cia_gallery_grid_sub_container`).show();
     }
     if (settings.recycleCollapsed) {
         $(`#${PANEL_CONTAINER_ID} [data-target="#cia_recycle_grid_container"] .cia-collapse-arrow`).addClass('collapsed');
@@ -890,7 +900,10 @@ function buildContext(messageId) {
 
         const role = message.is_user ? 'user' : message.is_system ? 'system' : 'assistant';
         const name = settings.includeNames && message.name ? `${message.name} ` : '';
-        const text = getMessageText(message).trim();
+        let text = getMessageText(message).trim();
+        if (settings.filterCiaJsonFromPlugin) {
+            text = stripCandidateJsonBlocks(text);
+        }
         if (!text) {
             continue;
         }
@@ -4092,6 +4105,81 @@ function testIndexFilter(item, filterText) {
     return matchRanges(item, filter.inclusions);
 }
 
+async function showPromptInspector() {
+    const messageId = getLastAssistantMessageId();
+    if (messageId === null) {
+        toastr.warning(t`No character reply available to inspect.`, 'Context Image Assistant');
+        return;
+    }
+
+    const settings = ensureSettings();
+    const systemPrompt = substituteParams(settings.systemPrompt);
+    const userPrompt = substituteParams(buildUserPrompt(messageId));
+    const jsonSchema = JSON.stringify(stripSchemaConstraints(getEffectiveJsonSchema(settings)), null, 2);
+
+    const popupContent = $(applyLocale(`
+        <div class="cia-prompt-inspector-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
+            <div style="font-size: 0.95em; opacity: 0.85; margin-bottom: 4px;" data-i18n="Prompt Inspector Intro">This is the final raw prompt that would be sent to the planning LLM if generated at this moment.</div>
+            
+            <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-weight: 600;" data-i18n="System Prompt">System Prompt</span>
+                <div class="cia-textarea-container" style="position: relative;">
+                    <textarea readonly id="cia_inspect_sys" class="text_pole" style="width: 100%; height: 110px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
+                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_sys" type="button" title="Copy System Prompt" data-i18n="[title]Copy System Prompt" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-weight: 600;" data-i18n="User Prompt & Context">User Prompt & Context</span>
+                <div class="cia-textarea-container" style="position: relative;">
+                    <textarea readonly id="cia_inspect_user" class="text_pole" style="width: 100%; height: 260px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
+                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_user" type="button" title="Copy User Prompt" data-i18n="[title]Copy User Prompt" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-weight: 600;" data-i18n="JSON Schema Constraint">JSON Schema Constraint</span>
+                <div class="cia-textarea-container" style="position: relative;">
+                    <textarea readonly id="cia_inspect_schema" class="text_pole" style="width: 100%; height: 90px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
+                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_schema" type="button" title="Copy JSON Schema" data-i18n="[title]Copy JSON Schema" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `));
+
+    // Fill values safely using .val()
+    popupContent.find('#cia_inspect_sys').val(systemPrompt);
+    popupContent.find('#cia_inspect_user').val(userPrompt);
+    popupContent.find('#cia_inspect_schema').val(jsonSchema);
+
+    // Bind copy actions
+    popupContent.find('.cia-copy-btn').on('click', function () {
+        const targetId = $(this).attr('data-target');
+        const textVal = popupContent.find(targetId).val();
+        if (textVal) {
+            navigator.clipboard.writeText(textVal).then(() => {
+                toastr.success(t`Copied to clipboard!`, 'Context Image Assistant');
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+            });
+        }
+    });
+
+    const popup = new Popup(popupContent, POPUP_TYPE.TEXT, t`Prompt Inspector`, {
+        okButton: t`Close`,
+        cancelButton: null,
+        wide: true,
+        wider: true,
+    });
+    await popup.show();
+}
+
 function showGalleryFilterHelp() {
     const helpContent = $(applyLocale(`
         <div class="cia-filter-help-wrapper" style="font-size: 0.92em; line-height: 1.6; max-height: 70vh; overflow-y: auto; padding: 10px 15px; color: var(--text-color); font-family: system-ui, -apple-system, sans-serif;">
@@ -4988,6 +5076,27 @@ eventSource.on(event_types.IMAGE_SWIPED, ({ message }) => {
     const messageId = chat.indexOf(message);
     if (messageId >= 0) {
         setTimeout(() => renderMessageControls(messageId), 100);
+    }
+});
+
+eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (eventData) => {
+    const settings = ensureSettings();
+    if (!settings.filterCiaJsonFromMain) return;
+    const chatArray = eventData.chat;
+    if (Array.isArray(chatArray)) {
+        for (const msg of chatArray) {
+            if (msg && typeof msg.content === 'string') {
+                msg.content = stripCandidateJsonBlocks(msg.content);
+            }
+        }
+    }
+});
+
+eventSource.on(event_types.GENERATE_AFTER_COMBINE_PROMPTS, (eventData) => {
+    const settings = ensureSettings();
+    if (!settings.filterCiaJsonFromMain) return;
+    if (eventData && typeof eventData.prompt === 'string') {
+        eventData.prompt = stripCandidateJsonBlocks(eventData.prompt);
     }
 });
 
