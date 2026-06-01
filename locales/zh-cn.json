@@ -336,5 +336,11 @@
     "Filter Candidate JSON in Main Chat": "主聊天发送时过滤候选 JSON",
     "Filter CIA JSON from Main Description": "启用后，在发送消息给酒馆主聊天 LLM 之前，会自动过滤掉 ComfyUI 候选 JSON 代码块。防止上下文污染。",
     "Filter Candidate JSON in Planner Context": "规划器上下文过滤候选 JSON",
-    "Filter CIA JSON from Plugin Description": "启用后，在发送消息给提示词规划 LLM 之前，会自动过滤掉上下文中的 ComfyUI 候选 JSON 代码块。防止模型复读。"
+    "Filter CIA JSON from Plugin Description": "启用后，在发送消息给提示词规划 LLM 之前，会自动过滤掉上下文中的 ComfyUI 候选 JSON 代码块。防止模型复读。",
+    "Delete API Profile": "删除 API 配置",
+    "Are you sure you want to delete API profile \"${0}\"?": "确定要删除 API 配置 \"${0}\" 吗？",
+    "Sort:": "排序:",
+    "Sort by floor": "按楼层排序",
+    "Floor Ascending": "楼层升序",
+    "Floor Descending": "楼层降序"
 }

@@ -47,6 +47,7 @@ const MENU_ENTRY_ID = 'cia_menu_entry';
 const PANEL_CONTAINER_ID = 'cia_settings_container';
 const EXTRA_KEY = 'context_image_assistant';
 const RECYCLE_BIN_KEY = 'cia_recycle_bin';
+const GALLERY_UI_STATE_KEY = 'cia_gallery_ui_state';
 const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const CANDIDATE_JSON_BLOCK_LANG = 'cia-candidate-json';
 const CANDIDATE_JSON_BLOCK_REGEX = /```cia-candidate-json\s*[\r\n]+[\s\S]*?```/gi;
@@ -500,9 +501,13 @@ async function createSettingsUi() {
             toastr.error(String(error?.message || error), 'Context Image Assistant');
         }
     });
-    $('#cia_api_profile_delete').on('click', () => {
+    $('#cia_api_profile_delete').on('click', async () => {
         const name = String($('#cia_api_profile_select').val() || '');
         if (!name) {
+            return;
+        }
+        const confirmed = await Popup.show.confirm(t`Delete API Profile`, t`Are you sure you want to delete API profile "${name}"?`);
+        if (!confirmed) {
             return;
         }
         if (removeApiProfileByName(name)) {
@@ -612,11 +617,15 @@ async function createSettingsUi() {
         $(`#${PANEL_CONTAINER_ID} #cia_recycle_grid_container`).show();
     }
 
+    applyGalleryUiStateToFilters();
+
     // Bind filters
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).on('change', () => {
+        saveGalleryFilterStateFromUi();
         renderGalleryList();
     });
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).on('input', () => {
+        saveGalleryFilterStateFromUi();
         renderGalleryList();
     });
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_help`).on('click', () => {
@@ -3559,6 +3568,60 @@ function saveRecycleBin(bin) {
     }
 }
 
+function getGalleryUiState() {
+    if (!chat_metadata || typeof chat_metadata !== 'object') {
+        return {
+            favoritesOnly: false,
+            floorFilter: '',
+            sortDirection: 'asc',
+        };
+    }
+
+    if (!chat_metadata[GALLERY_UI_STATE_KEY] || typeof chat_metadata[GALLERY_UI_STATE_KEY] !== 'object' || Array.isArray(chat_metadata[GALLERY_UI_STATE_KEY])) {
+        chat_metadata[GALLERY_UI_STATE_KEY] = {};
+    }
+
+    const state = chat_metadata[GALLERY_UI_STATE_KEY];
+    state.favoritesOnly = Boolean(state.favoritesOnly);
+    state.floorFilter = String(state.floorFilter || '');
+    state.sortDirection = state.sortDirection === 'desc' ? 'desc' : 'asc';
+    return state;
+}
+
+function applyGalleryUiStateToFilters() {
+    const state = getGalleryUiState();
+    $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).prop('checked', state.favoritesOnly);
+    $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).val(state.floorFilter);
+}
+
+function saveGalleryFilterStateFromUi() {
+    const state = getGalleryUiState();
+    state.favoritesOnly = !!$(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).prop('checked');
+    state.floorFilter = String($(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).val() || '');
+    void saveChatConditional();
+}
+
+function saveGallerySortDirection(direction) {
+    const state = getGalleryUiState();
+    state.sortDirection = direction === 'desc' ? 'desc' : 'asc';
+    void saveChatConditional();
+}
+
+function sortGalleryItemsForLargeGrid(items) {
+    const direction = getGalleryUiState().sortDirection;
+    const multiplier = direction === 'desc' ? -1 : 1;
+    return [...items].sort((a, b) => {
+        const floorA = Number.isInteger(a.floorNumber) ? a.floorNumber : Number.MAX_SAFE_INTEGER;
+        const floorB = Number.isInteger(b.floorNumber) ? b.floorNumber : Number.MAX_SAFE_INTEGER;
+        if (floorA !== floorB) {
+            return (floorA - floorB) * multiplier;
+        }
+        const mediaA = Number.isInteger(a.mediaIndex) ? a.mediaIndex : Number.MAX_SAFE_INTEGER;
+        const mediaB = Number.isInteger(b.mediaIndex) ? b.mediaIndex : Number.MAX_SAFE_INTEGER;
+        return (mediaA - mediaB) * multiplier;
+    });
+}
+
 function getRecycleItemKey(item) {
     if (!item || typeof item !== 'object') {
         return '';
@@ -3680,6 +3743,7 @@ function refreshImageManagementViews({ force = false } = {}) {
         lastActiveImagesCount = currentActiveCount;
         lastRecycledImagesCount = currentRecycledCount;
 
+        applyGalleryUiStateToFilters();
         renderGalleryList();
         renderRecycleBinList();
     }
@@ -4487,6 +4551,7 @@ async function showGalleryImageDetail(itemId, items = null) {
 async function showGalleryLargeGridPreview(mode = 'gallery') {
     const settings = ensureSettings();
     let columns = settings.largeGridColumns || 3;
+    const galleryUiState = getGalleryUiState();
 
     const popupContent = $(applyLocale(`
         <div class="cia-large-grid-popup-wrapper" data-mode="${escapeHtmlAttr(mode)}" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
@@ -4513,6 +4578,13 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
                     <span data-i18n="Favorites Only">Favorites Only</span>
                     <input type="checkbox" id="cia_large_filter_fav" class="checkbox" style="margin: 0;">
                 </label>
+                <label class="cia-large-sort-select" for="cia_large_sort_direction" title="Sort by floor" data-i18n="[title]Sort by floor" style="display: flex; align-items: center; gap: 6px; margin: 0; min-width: 150px;">
+                    <span style="font-size: 0.82em; opacity: 0.8; white-space: nowrap;" data-i18n="Sort:">Sort:</span>
+                    <select id="cia_large_sort_direction" class="text_pole" style="margin: 0; height: 26px; font-size: 0.82em; padding: 2px 6px;">
+                        <option value="asc" ${galleryUiState.sortDirection === 'asc' ? 'selected' : ''} data-i18n="Floor Ascending">Floor Ascending</option>
+                        <option value="desc" ${galleryUiState.sortDirection === 'desc' ? 'selected' : ''} data-i18n="Floor Descending">Floor Descending</option>
+                    </select>
+                </label>
                 <div style="display: flex; align-items: center; gap: 6px; flex-grow: 1; min-width: 180px;">
                     <span style="font-size: 0.82em; opacity: 0.8; white-space: nowrap;" data-i18n="Floor Filter:">Floor Filter:</span>
                     <input type="text" id="cia_large_filter_floor" class="text_pole" placeholder="e.g., 1-5, CUR \\\\ 3 (click ? on right)" data-i18n="[placeholder]e.g., 1-5, CUR \\\\ 3 (click ? on right)" style="margin: 0; height: 26px; font-size: 0.82em; padding: 2px 6px; flex-grow: 1;">
@@ -4531,7 +4603,7 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
     const container = popupContent.find('.cia-large-grid-container');
 
     const renderCards = () => {
-        const currentItems = mode === 'gallery' ? getFilteredGalleryImages() : getFilteredRecycleImages();
+        const currentItems = mode === 'gallery' ? sortGalleryItemsForLargeGrid(getFilteredGalleryImages()) : getFilteredRecycleImages();
         popupContent.find('.cia-large-grid-count').text(currentItems.length);
         container.empty();
 
@@ -4639,6 +4711,11 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
 
         popupContent.find('#cia_large_filter_help').on('click', () => {
             showGalleryFilterHelp();
+        });
+
+        popupContent.find('#cia_large_sort_direction').on('change', function () {
+            saveGallerySortDirection(String($(this).val() || 'asc'));
+            renderCards();
         });
 
         popupContent.find('#cia_large_save_gallery').on('click', async function () {
