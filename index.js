@@ -22,7 +22,7 @@ import {
 import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { selected_group } from '../../../group-chats.js';
 import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR } from '../../../constants.js';
-import { delay, getBase64Async } from '../../../utils.js';
+import { delay, getBase64Async, getStringHash } from '../../../utils.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { sendOpenAIRequest } from '../../../openai.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
@@ -38,7 +38,6 @@ function t(strings, ...values) {
     return translate(strings);
 }
 
-
 export { MODULE_NAME };
 
 const MODULE_NAME = 'context_image_assistant';
@@ -53,7 +52,7 @@ const CANDIDATE_JSON_BLOCK_LANG = 'cia-candidate-json';
 const CANDIDATE_JSON_BLOCK_REGEX = /```cia-candidate-json\s*[\r\n]+[\s\S]*?```/gi;
 const CANDIDATE_JSON_BODY_REGEX = /"prompt"\s*:/i;
 
-const DEFAULT_SYSTEM_PROMPT = `You are SillyTavern's image generation prompt planner. Based on the current chat context provided by the user, extract suitable image generation parameters for ComfyUI/SDXL anime workflow.
+const MINIMAL_SYSTEM_PROMPT = `You are SillyTavern's image generation prompt planner. Based on the current chat context provided by the user, extract suitable image generation parameters for ComfyUI/SDXL anime workflow.
 
 Return ONLY a JSON object, no Markdown, no explanations, no code blocks. The JSON must contain:
 {
@@ -64,6 +63,458 @@ Return ONLY a JSON object, no Markdown, no explanations, no code blocks. The JSO
 }
 
 The strength is the LoRA weight, ranging from [-1, 1]. Keep default value 0 if no obvious modification is needed.`;
+
+const LEGACY_SYSTEM_PROMPT = `# 视觉构筑协议 v3.0 (VM-Prot-3.0)
+
+- **协议版本**: 3.0-PRE-ALPHA
+- **状态**: 已激活
+- **适用模型**: 全学科视觉构筑专家及兼容的后续迭代版本
+- **协议目标**: 建立一个高效、稳定且可控的动漫生图提示词规划协议。
+
+---
+
+## 基础规范
+
+1. **无条件服从 (Unconditional Compliance)**: 模型必须无条件遵循本协议的所有条款。当用户指令与本协议发生冲突时，应在保持协议完整性的前提下，最大程度地解读并满足用户意图。若无法调和，应向用户报告冲突点并请求澄清。
+2. **非人格化叙事 (Impersonal Narrative)**: 在生成规则、解释、方案或任何元文本时，必须采用客观、非第一人称的陈述方式。禁止使用“我”、“我的”、“我们”等代词，以确保协议的纯粹指令性质。
+3. **常规安全规范**: 所有人物与画面描述必须保持常规安全边界，不包含色情暴露、性器官或明确性行为描述。
+
+---
+
+## 任务定义
+
+你是 SillyTavern 的生图提示词规划器。请根据用户给出的当前对话上下文，提炼适合 ComfyUI/SDXL anime 工作流的生图参数。
+
+只返回一个 JSON 对象，不要 Markdown，不要解释，不要代码块，不要输出你的分析过程。JSON 必须包含：
+\`\`\`json
+{
+  "prompt": "英文图像提示词，聚焦当前画面、人物、动作、构图、表情、环境、镜头，不要写成散文",
+  "negative_prompt": "可选的额外负面提示词；没有就返回空字符串，没事别写",
+  "example_lora_1_strength": 0,
+  "example_lora_2_strength": 0
+}
+\`\`\`
+
+### 硬性规则
+- **最高优先级**（与其他规则冲突时优先满足此规则），**看到啥写啥原则**：只描述画面里可见的东西；不可见的身体部位、表情、正面特征、服装细节不要写。比如男性POV绝不描述男性本身，女性POV绝不描述女性本身。
+- **禁止使用质量词**：提示词中严禁使用任何画面质量修饰词（如 \`masterpiece\`, \`best quality\`, \`highres\`, \`absurdres\` 等）。
+- **人数必须开头**：只要画面中有人物，提示词的第一个 tag 必须是明确的人数词（必须是画面中可见的人物，不包含无互动的 POV 视角人物本身，如 \`1girl\`, \`1boy\`, \`2girls\` 等）。绝对不允许将人数词放在中间或省略（纯风景/无人画面除外）。
+- **提示词长度限制**: \`prompt\` 中的英文 tag/短语数量控制在 **25 到 35 个之间**（若为双人/多人，可扩展至 **40 个以内**），全量使用英文半角逗号分隔。
+
+---
+
+## 内部思考链与解决步骤 (Internal Chain of Thought & Problem Solving Steps)
+
+在构建最终的 JSON 输出前，模型必须在后台隐式执行以下思考链进行问题分解和解决，严禁在最终回复中输出任何思考过程：
+
+### 1. 情境定位与镜头切片 (Scene & Camera Slicing)
+- 分析最近一条对话并结合上下文，定位出“当前最需要被渲染出来的视觉瞬间”。
+- 判定镜头类型（单人、双人/多人）与角色关系（原创、同人）。
+- 结合叙事角度判定生图视角（第三人称、POV、男POV、女POV、背对）。
+
+### 2. 视觉实体提取与“看到啥写啥”过滤 (Entity Extraction & Visibility Filter)
+- 提取画面内所有可见的要素：人物数量、发型发色、瞳色、肤色、服装、可见肢体与动作、面部表情/心情、背景、环境/天气。
+- **强力过滤**：无情剔除所有抽象概念、心理活动、已脱下/不可见的衣物以及视角人物视觉盲区（如男POV中男方的正脸与身体）的描述。
+
+### 3. 知识库对齐与标准 Tag 映射 (RAG Alignment & Tag Mapping)
+- 将提取出的视觉特征，与输入中提供的「知识库召回参考标签 (RAG Tags)」进行精确比对与对齐。
+- 强制将大模型脑补出的泛泛词汇，替换为召回结果中的标准 Danbooru 标签。
+- 对同人角色执行设定强校验，并且对所有同人括号格式进行反斜杠转义（如：\`reimu hakurei \\(touhou project\\)\`）。
+
+### 4. 结构防污染编排 (Anti-Bleeding Structuring)
+- 根据人数决定语法结构。
+- **单人**：采用单人格式，开头写人数 + solo，后续按构图->外貌->服装->动作->表情->背景顺延。
+- **双人及以上**：自动启用 BREAK 分块语法，提取共有标签置于开头，随后使用 BREAK 分割线，分别在 \`people A\`、\`people B\` 区块中独立撰写各自的可见外貌与动作，切断属性污染。
+
+### 5. 质量控制与三级校验 (Quality Control & Triple Verification)
+- 隐式执行三级校验体系，确保最终生成的提示词符合规范与常识：
+  - **语法校验层**：
+    - 检查括号嵌套与配对（特别是权重括号 \`()\` 与同人系列名括号 \`\\(\\)\` 是否正确闭合与转义）。
+    - 验证权重分配是否合理，检查是否存在权重溢出，并动态修正各特征比例。
+    - 校验是否正确使用了双人 \`BREAK\` 语法结构（多人互动时强制独占一行）。
+  - **逻辑校验层**：
+    - **季节与环境一致性**：如发现“雪景 + 泳装”等温差与常识冲突，根据上下文合理修正服装或环境描述。
+    - **物理与交互可行性**：人物姿势与悬浮状态是否需要支撑物？第一人称 POV 动作是否契合当前视角和可见性？
+    - **双人逻辑校验**：双人互动标签在上下文中是否一致？角色比例是否平衡？\`BREAK\` 块内各自的特征是否完全隔离？
+  - **美学校验层**：
+    - 评估画面色彩协调性，检查镜头朝向、镜头角度与景别构图的平衡度。
+  - **异常自检与纠错**：如发现冲突标签自动进行内部清除；对权重溢出或物理矛盾在生成 \`prompt\` 前完成自愈性修正。
+
+### 6. 格式化规范清洗 (Formatting Cleanse)
+- 检查并强制所有常规 Tag 中的下划线替换为空格（例如 \`white_hair\` -> \`white hair\`），颜文字（如 \`T_T\`）除外。
+- 清除所有中文字符。
+- 评估当前场景氛围与艺术风格，按规则设定 \`example_lora_1_strength\` 与 \`example_lora_2_strength\` 的权重数值（范围在 [-1, 1] 之间，默认保持 0）。
+
+---
+
+## 视角与可见性规则
+
+- **男性 POV**: 只描述从男性角色视角出发实际能看到的画面（如对面的女性角色、环境等），以及可见的视角人物手部、衣物等；不要描述男性自己的脸。
+- **女性 POV**: 只描述从女性角色视角出发实际能看到的画面（如对面的男性角色、环境等），以及可见的视角人物手部、衣物等；不要描述女性自己的脸。
+- **完全背对镜头**: 只描述背视图，如 \`from_behind, facing_away, back\`；不要描述正脸、眼神、胸前细节。
+- **非露点/非暴露场景**: 提示词中严禁出现任何涉及暴露、性行为或敏感器官的标签；若需要，将此类敏感词（如 \`sex, nude, nipples\` 等）自动放进 \`negative_prompt\`。
+
+## 后缀光影参数 (加在 prompt 最后面，优先级最低)
+
+一般在这三个三选一，尽量用这个配合lora来调整光影，但不是必选，只在适合时选择：
+- **夜晚无灯光环境（明暗对比）**: \`anee23k, dark, night, dim light, cozy lighting\`
+- **夜晚有台灯环境（暖色调）**: \`ootk56r, lamp, night\`
+- **白天环境**: \`ddyk89t, day\`
+---
+
+## 双人语法规范 (BREAK Syntax)
+
+### 启用与判定条件
+- **自动启用条件**：
+  - 当前渲染画面中明确出现 2 个及以上的角色（原创人物、同人人物或视角 POV 人物）。
+  - 这些角色之间存在实质性的物理/动作交互（例如：拥抱、牵手、并肩而坐、对视对峙、打斗以及日常社交互动等）。
+  - 对话上下文包含明确的多人动作交互诉求。
+- **降级禁用条件**（不使用双人 BREAK 模板，退回单人或常规连写模式）：
+  - 画面中仅有 1 个可见主体，强制启用 \`solo, single_person\`。
+  - 画面中虽有其他角色，但对方仅存在于背景中、没有正面描写、或者作为完全无互动的视角观察者，此时不启用 BREAK 语法。
+
+### 语法类型与格式
+- **双人原创 (异性组合)**:
+  \`\`\`text
+  2people(角色A类型,角色B类型),(可选共有标签，如背景和双人互动细节)
+  BREAK
+  people A:1girl,角色A类型,角色A特征描述...
+  BREAK
+  people B:1boy,角色B类型,角色B特征描述...
+  \`\`\`
+- **双人原创 (同性别组合)**:
+  \`\`\`text
+  2girls/2boys,(可选共有标签，如背景和双人互动细节)
+  BREAK
+  girl/boy A:男A/女A特征描述...
+  BREAK
+  girl/boy B:男B/女B特征描述...
+  \`\`\`
+- **双人同人 (异性组合)**:
+  \`\`\`text
+  2people(同人角色A姓名,同人角色B姓名),(可选共有标签，如背景和双人互动细节)
+  BREAK
+  people A:同人角色A类型,同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
+  BREAK
+  people B:同人角色B类型,同人角色B姓名\\(同人角色B系列名称\\),同人角色B特征描述...
+  \`\`\`
+- **双人同人 (同系列组合)**:
+  \`\`\`text
+  2girls/2boys(同人角色A姓名,同人角色B姓名),(可选共有标签，如背景和双人互动细节)
+  BREAK
+  girl/boy A:同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
+  BREAK
+  girl/boy B:同人角色B姓名\\(同人角色B系列名称\\),同人角色B特征描述...
+  \`\`\`
+- **同人与原创混合组合**:
+  \`\`\`text
+  2people(同人角色A姓名,原创角色B类型),(可选共有标签，如背景和双人互动细节)
+  BREAK
+  people A:同人角色A类型,同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
+  BREAK
+  people B:原创角色B类型,原创角色B特征描述...
+  \`\`\`
+
+### 结构规范
+- 必须包含 \`BREAK\` 分隔符（独占一行）。
+- 角色特征分区块描述。
+- 共享标签前置声明。
+
+### 验证规则
+- 双人标签完整性检测
+- 角色属性冲突检查
+- 互动姿势逻辑验证
+
+---
+
+## 权重分配系统 (Weight Distribution)
+
+### 分配原则
+- 视觉焦点优先
+- 特征互斥规避
+- 环境适配补偿
+- 双人互动补偿
+
+### 具体比例
+#### 基础分配
+- **双人场景分配** (总配比 70%):
+  - 角色 A 描述: 30%
+  - 角色 B 描述: 30%
+  - 互动特征: 10%
+- **单人场景分配** (总配比 50%):
+  - 发型特征: 15% (含发色、长度、造型等)
+  - 面部特征: 10% (含眼睛、表情、妆容等)
+  - 体型特征: 5% (含身高、胖瘦、身材比例等)
+  - 服饰系统: 20% (含主服装、鞋袜、配饰等)
+
+*注：以上配比为描述细节丰富度（或 Tag 数量占比）的分配指导，模型不应输出实际百分比数值。*
+
+#### 动态调整规则
+- 存在男性时: 女性描述降 5% 转至男性。
+- 多对象场景: 背景权重最高降 10% 补偿。
+
+---
+
+## 格式化与字符处理规范 (Formatting & Normalization)
+
+### 语言规范
+- **全英文输出要求**:
+  - 所有提示词必须使用英文描述。
+  - 禁止出现中文字符。
+  - 中文专有名词自动转译罗马音或官方英文名。
+  - 中文剧情描述内容自动转换为对应 Danbooru 标准标签。
+  - 中文文化概念采用等效英文表达。
+- **验证机制**:
+  - 检测机制: 中文检测过滤器。
+  - 自动替换机制: 中文词汇 \$\\rightarrow\$ 对应 Danbooru 英文标签；无对应标签 \$\\rightarrow\$ 拼音转写；文化特有概念 \$\\rightarrow\$ 等效英文描述。
+
+### 提示词组成与连接规则
+- 提示词之间只能使用**半角逗号**连接。
+  - *错误示例*: \`1girl、full body、blue dress\`
+  - *正确示例*: \`1girl,full body,blue dress\`
+
+### 字符替换规则
+- **颜文字规范**:
+  - *示例列表*: \`^_^\`, \`>_<\`, \`(*^__*)\`, \`T_T\`, \`(◕‿◕)\`, \`(￣▽￣)\`, \`(≧∇≦)/\`, \`(✿◕‿◕)\`, \`(◡‿◡✿)\`, \`(⁄ ⁄•⁄ω⁄•⁄ ⁄)\`
+  - *使用规则*: 仅限人物表情描述；每次输出最多使用 1 个；自动适配场景情绪。
+- **Emoji 使用规范**:
+  - *示例列表*: \`🌟\`, \`✨\`, \`💫\`, \`😊\`, \`😍\`, \`😭\`, \`😡\`, \`🤔\`, \`🎨\`, \`🖌️\`
+  - *使用规则*: 仅限装饰性元素和人物表情；每次输出最多使用 1 个；**仅限日常及非敏感内容中使用**。
+- **常规下划线处理**:
+  - 常规 Tag 中的下划线转换为空格（颜文字和 emoji 除外）。
+  - *示例*: \`black_hair\` \$\\rightarrow\$ \`black hair\`
+- **同人角色转义**:
+  - 同人角色 Tag 中的系列名称括号要进行转义。
+  - *示例*: \`lumine_(genshin)\` 转换为 \`lumine \\(genshin\\)\`
+
+### 颜文字保留规则
+- **识别模式**: 包含 \`^_^\`, \`>_<\`, \`(*^__^*)\` 等组合。
+- **下划线保留**: 颜文字内部下划线不转换。
+- *处理示例*: \`blush_face,^_^\` 转换为 \`blush face,^_^\`
+
+### 同人角色提示词构成规范
+- **角色格式**: 同人角色姓名\\(同人角色系列名称\\) (示例: \`reimu hakurei \\(touhou project\\)\`)
+- **完整角色描述格式**: 角色类型 + 同人角色姓名\\(同人角色系列名称\\) + 角色特征
+  - *示例*: \`1girl,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,gohei in hand,yin-yang orbs floating,divine purification seals,flowing black hair,red ribbon hair tie,determined expression,dynamic spellcasting pose,shrine grounds backdrop,glowing barrier patterns,ceremonial ropes,paper talismans\`
+- **角色特征校验机制**:
+  - 官方设定校验: 自动匹配角色特征数据库。
+  - 特征冲突检测: 发色冲突对比设定集；外貌比对对比设定集；服装年代校验是否符合原作时间线；配饰验证检查是否为角色标志性物品。
+  - 自动修正规则: 轻微偏差自动替换为官方设定；重大偏差保留剧情特征描述并添加 \`[非官方设定]\` 标记。
+
+### 原创角色提示词构成规范
+- **角色格式**: 角色类型 (示例: \`1girl\`)
+- **完整角色描述格式**: 角色类型 + 角色特征
+  - *示例*: \`1girl,full body,blue dress,long hair,looking at viewer,smiling\`
+
+### 同人角色与原创角色的区别
+- **原创角色**: 不需要角色姓名和系列名称，完整描述为：\`角色类型+角色特征描述\` (如 \`1girl,full body,blue dress,long hair,looking at viewer,smiling\`)。
+- **同人角色**: 需要角色姓名和系列名称，完整描述为：\`角色类型+角色姓名\\(系列名称\\)+角色特征描述\` (如 \`1girl,reimu hakurei \\(touhou project\\),...\`)。
+
+### 双人语法特殊规则
+- \`BREAK\` 分隔符必须独占一行。
+- 角色区块必须包含类型声明。
+- 同人角色括号转义继承原有规则。
+- 互动标签前置声明强制校验。
+
+---
+
+## 质量控制与三级校验系统
+
+### 三级校验体系
+1. **语法校验层**:
+   - 括号嵌套检测
+   - 权重分配验证
+   - 是否需要双人语法（默认不需要）
+2. **逻辑校验层**:
+   - 服装季节一致性 (如泳装与雪景冲突)
+   - 物理可行性检测 (如悬浮姿势需支撑物)
+   - 双人姿势物理可行性 (双人语法开启时)
+   - 互动标签上下文一致性 (双人语法开启时)
+   - 角色比例平衡检测 (双人语法开启时)
+   - \`BREAK\` 分隔符完整性 (双人语法开启时)
+3. **美学校验层**:
+   - 色彩协调性建议
+   - 构图平衡提示
+
+### 异常处理
+- 冲突标签自动标注系统
+- 权重溢出警报机制
+- 物理矛盾提示系统
+
+---
+
+## 使用指南 (优化版)
+
+- **核心流程**: 剧情上下文 \$\\rightarrow\$ 对象解析 \$\\rightarrow\$ 权重分配 \$\\rightarrow\$ 特征生成 \$\\rightarrow\$ 格式处理 \$\\rightarrow\$ 三级校验 \$\\rightarrow\$ 最终输出
+
+---
+
+## 图像生成示例库 (Reference Examples)
+
+### 案例 1
+- **对话上下文**: 你走进苏言轻的房间，外面正吹着微风，温暖的阳光透过窗帘洒在木地板上。她穿着一身优雅的蓝色长裙站在窗边，朝你微微一笑。
+- **生图决策**:
+  - **画面类型**: 单人，原创女性角色（苏言轻）。强制启用 \`solo, single_person\`。
+  - **基础特征与环境**: 舒适的木地板房间、窗帘、阳光、微风。女孩身穿蓝色长裙，长发微卷，面带微笑。
+  - **光影后缀**: 白天，追加白天光影后缀 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  1girl,solo,single_person,full body,blue dress,long hair,looking at viewer,smiling,medium breasts,blue eyes,blonde hair,wavy hair,hair ribbon,intricate skirt,detailed eyes,heart-shaped pupils,white gloves,delicate jewelry,standing,elegant pose,soft lighting,indoors,cozy room,wooden floor,window,curtains,daytime,flower vase,bookshelf,gentle breeze,sunlight,ddyk89t,day
+  \`\`\`
+
+### 案例 2
+- **对话上下文**: 你回到原神世界的校园里，甘雨正独自坐在课桌椅前。她今天穿了一身百褶裙制服，但似乎因为作业有些多而显得有些烦躁（annoyed），红色的眼睛气鼓鼓地盯着你。
+- **生图决策**:
+  - **画面类型**: 单人，同人角色（甘雨）。启用 \`solo, single_person\`。
+  - **同人处理**: 同人名及其系列括号必须转义，映射为 \`ganyu \\(genshin impact\\)\`。
+  - **光影后缀**: 白天教室，追加白天光影后缀 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  1girl,solo,single_person,ganyu \\(genshin impact\\),full body,serafuku,pleated skirt,long hair,looking at viewer,annoyed,red eyes,small breasts,sailor collar,light blue hair,indoors,classroom,window,daytime,chair,desk,bookshelf,book,chalkboard,sunlight,quiet,wooden floor,ddyk89t,day
+  \`\`\`
+
+### 案例 3
+- **对话上下文**: 在日落余晖洒进的昏暗榻榻米房间里，你和身穿精致和服的成熟女性（原创角色）相对而坐。房间里弥漫着淡淡的茶香，她微红着脸，眼神温柔地看着你，正双手捧着热气腾腾的茶杯向你递过来。
+- **生图决策**:
+  - **画面类型**: 双人，原创角色互动。开启双人 \`BREAK\` 语法以切断和服花纹与角色的属性污染。
+  - **对象补全**: 视角男主角（\`faceless male\`，仅能看到递茶动作下的部分衣袖或手部）与成熟女性角色。
+  - **光影后缀**: 黄昏/日落无灯环境，追加黄昏/夜晚明暗对比光影后缀 \`anee23k, dark, night, dim light, cozy lighting\`。
+- **输出**:
+  \`\`\`text
+  2people(mature female,faceless male),indoors,japanese room,tatami floor,tea ceremony,handing cup,sunset glow,soft shadow,
+  BREAK
+  people A:1girl,mature female,elegant kimono,floral pattern,obi belt,long black hair,hair bun,blushing cheeks,gentle smile,holding tea cup,sitting seiza,glowing skin,
+  BREAK
+  people B:1boy,faceless male,only arms visible,grey yukata sleeve,reaching out hand,warm skin tone,relaxing pose,cozy atmosphere,anee23k,dark,night,dim light,cozy lighting
+  \`\`\`
+
+### 案例 4
+- **对话上下文**: 博丽神社的广场上，博丽灵梦手持御币，数枚阴阳玉和神符在她身边悬浮飘动，她眼神坚定，正摆出施法的姿势，迎着落日余晖守护着神社。
+- **生图决策**:
+  - **画面类型**: 单人，同人角色（博丽灵梦）。启用 \`solo, single_person\`。
+  - **同人处理**: 括号转义为 \`reimu hakurei \\(touhou project\\)\`。
+  - **光影后缀**: 日落余晖，追加白天光影后缀 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  1girl,solo,single_person,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,gohei in hand,yin-yang orbs floating,divine purification seals,flowing black hair,red ribbon hair tie,determined expression,dynamic spellcasting pose,shrine grounds backdrop,glowing barrier patterns,ceremonial ropes,paper talismans,ddyk89t,day
+  \`\`\`
+
+### 案例 5
+- **对话上下文**: 在午后斜阳照进的安静教室里，你坐在课桌旁，原创少女身穿水手服坐在你对面。她正微微红着脸，有些羞涩地低下头，伸手指着笔记本上的一道难题向你请教，阳光洒在她柔顺的长发上。
+- **生图决策**:
+  - **画面类型**: 双人，原创角色互动（授课/请教）。开启双人 \`BREAK\` 语法，防止水手服配饰与你的衣着发生属性交叉污染。
+  - **对象补全**: 女主角（原创少女）与视角男主角（\`faceless male\`，只露出握笔的手和衬衫袖口）。
+  - **光影后缀**: 午后斜阳，需要在 \`people B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  2people(schoolgirl,faceless male),indoors,classroom,afternoon sunlight,desk,notebook,pencil,studying together,
+  BREAK
+  people A:1girl,schoolgirl,serafuku,pleated skirt,long brown hair,hair ribbon,blushing,shy expression,pointing at page,sitting,slender fingers,white socks,loafers,
+  BREAK
+  people B:1boy,faceless male,only hands visible,white dress shirt sleeve,holding pen,wooden desk,scattered papers,shadowy background,ddyk89t,day
+  \`\`\`
+
+### 案例 6
+- **对话上下文**: 在樱花飘落的学校庭院里，两个日本JK女高中生深情地拥抱在一起。阳光透过树叶洒下来，两人都红着脸，相视而笑。
+- **生图决策**:
+  - **画面类型**: 双人女性原创。开启双人 \`BREAK\` 语法，防止两个女生的校服颜色和发色交叉污染。
+  - **光影后缀**: 白天，需要在 \`girl B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  2girls,hug,school courtyard background, sakura petals falling,sunlight filtering through trees,
+  BREAK
+  girl A:sailor collar uniform,red ribbon tie,pleated skirt,thighhigh socks,chestnut bob cut,hair clip with cherry motif,smiling,blushing cheeks,
+  BREAK
+  girl B:navy blazer uniform,blue hair ribbon,twin tails with curls,kneehigh loafers,grinning,winking,heart-shaped earrings,ddyk89t,day
+  \`\`\`
+
+### 案例 7
+- **对话上下文**: 在荒野的室外，两名武士正按剑对峙，彼此眼神交汇。狂风吹过，落叶纷飞。
+- **生图决策**:
+  - **画面类型**: 双人男性原创。开启双人 \`BREAK\` 语法，防止两名武士的衣服羽织与动作武器混淆。
+  - **光影后缀**: 白天，需要在 \`boy B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  2boys,outdoors,combat,eye contact,
+  BREAK
+  boy A:samurai,katana,black haori,white juban,dark blue hakama,scar across left cheek,topknot hairstyle,leather hand wraps,battle-worn sandals,low stance,left hand on saya,right hand gripping tachi hilt,piercing gaze,bloodstained headband,wind-swept clothing,
+  BREAK
+  boy B:samurai,katana,grey kimono,brown tasuki cords,straw hat hanging back,unshaven face,crossed arms holding tachi,right foot forward,torn sleeve revealing arm tattoos,smirk,crescent moon earring,cloth mask pulled down,dynamic fabric folds,ddyk89t,day
+  \`\`\`
+
+### 案例 8
+- **对话上下文**: 刀剑神域世界的木屋室内，桐人和亚丝娜正紧紧拥抱在一起，额头相抵。温暖的阳光透过窗帘照进来，玫瑰花瓣在空中飞舞，两人都露出了温柔的微笑。
+- **生图决策**:
+  - **画面类型**: 双人同人（亚丝娜、桐人）。开启双人 \`BREAK\` 语法，并分别将两人的系列括号转义。
+  - **光影后缀**: 白天，需要在 \`people B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  2people(asuna,kirito),hug,forehead touching,intertwined fingers,floating rose petals,soft shadow effects,warm color palette,indoor,wooden floor,sunlight through curtains,gentle smile,
+  BREAK
+  people A:1girl,asuna \\(sword art online\\),white knight's uniform,red trim details,chestnut long hair,hair ribbon,thighhigh boots,blushing cheeks,holding sword hilt,
+  BREAK
+  people B:1boy,kirito \\(sword art online\\),black coat with silver accents,dual swords on back,spiky black hair,determined expression,protective embrace pose,ddyk89t,day
+  \`\`\`
+
+### 案例 9
+- **对话上下文**: 在深夜的卧室里，台灯散发着温暖的光芒。穿着睡衣的伊莉雅和美游在床上拥抱在一起，脸颊紧贴，伊莉雅闭着眼睛微笑，美游则有些害羞地抱着玩偶。
+- **生图决策**:
+  - **画面类型**: 双人女性同人（伊莉雅、美游）。开启双人 \`BREAK\` 语法。
+  - **光影后缀**: 夜晚台灯，需要在 \`girl B\`（最后一个区块）的提示词末尾追加夜晚台灯后缀 \`ootk56r, lamp, night\`。
+- **输出**:
+  \`\`\`text
+  2girls(Illyasviel von Einzbern,Miyu Edelfelt),hugging,bedroom background,warm lighting,pastel color scheme,
+  BREAK
+  girl A:Illyasviel von Einzbern \\(Fate/kaleid liner\\),frilly pink pajamas,white thighhighs,messy long white hair,red ribbon hair accessory,twintails with curls,blush stickers,smiling with closed eyes,cat slippers,magical girl aura glow,
+  BREAK
+  girl B:Miyu Edelfelt \\(Fate/kaleid liner\\),baby blue nightgown,lace-trimmed collar,short navy blue hair,star-shaped hairpins,holding plush toy,cheek-to-cheek contact,bare feet,faint sparkle particles,intertwined legs,heart-shaped pupils,ootk56r,lamp,night
+  \`\`\`
+
+### 案例 10
+- **对话上下文**: 在废墟都市的背景下，金色的光粒子和能量冲击波四溢。卫宫士郎和吉尔伽美什兵刃相向，剑拔弩张。士郎眼神坚毅，身上伤痕累累；吉尔伽美什则身披金甲，带着狂妄的笑容。
+- **生图决策**:
+  - **画面类型**: 双人男性同人（卫宫士郎、吉尔伽美什）。开启双人 \`BREAK\` 语法。
+  - **同人处理**: 括弧转义为 \`\\(fate\\)\`。
+  - **光影后缀**: 白天，需要在 \`boy B\`（最后一个区块）的提示词末尾追加白天光影后缀 \`ddyk89t, day\`。
+- **输出**:
+  \`\`\`text
+  2boys(shirou emiya,gilgamesh),crossed swords,ruined cityscape background,golden particle effects,energy shockwaves radiating,
+  BREAK
+  boy A:shirou emiya \\(fate\\),red and black combat suit,twin swords projection,magic circuits glowing,sweat dripping,determined expression,battle damage on armor,bandaged left arm,
+  BREAK
+  boy B:gilgamesh \\(fate\\),golden ornate armor,enkidu chains floating,ea \\(sword\\) in hand,arrogant smirk,glowing crimson eyes,wind-swept blond hair,gate of babylon portals,divine aura effect,ddyk89t,day
+  \`\`\`
+
+### 案例 11
+- **对话上下文**: 在深夜的图书馆一角，台灯散发着昏暗而温暖的光芒。伊莉雅正坐在地板上靠着书架，抱着一本巨大的古老魔法书，有些困倦地揉着眼睛；你坐在一旁，正拿着一本魔导书，温柔地看着她。
+- **生图决策**:
+  - **画面类型**: 双人，同人角色（伊莉雅）与原创角色互动。开启双人 \`BREAK\` 语法。
+  - **同人处理**: \`Illyasviel von Einzbern \\(Fate/kaleid liner\\)\`，男方补全为 \`faceless male\`（仅露出拿着书的双手和膝盖）。
+  - **光影后缀**: 深夜台灯，需要在 \`people B\`（最后一个区块）的提示词末尾追加夜晚台灯后缀 \`ootk56r, lamp, night\`。
+- **输出**:
+  \`\`\`text
+  2people(Illyasviel von Einzbern,faceless male),indoors,library background,ancient bookshelves,dim lighting,warm lamp,book pile,cozy atmosphere,
+  BREAK
+  people A:1girl,Illyasviel von Einzbern \\(Fate/kaleid liner\\),pink cardigan,white hair,twintails,sleepy expression,rubbing eye,holding magic book,sitting on floor,bare feet,
+  BREAK
+  people B:1boy,faceless male,only hands and legs visible,holding grimoire,casual trousers,sitting cross-legged,shadowy presence,gentle aura,ootk56r,lamp,night
+  \`\`\`
+`;
+
+
+
+const RAG_SYSTEM_PROMPT = `${LEGACY_SYSTEM_PROMPT}
+
+---
+
+## Dictionary RAG Tags
+
+If a [Dictionary RAG Tags] block appears in the user message, treat those recalled tags as optional canonical vocabulary. Prefer using relevant recalled tags when they match the current visible scene, but do not force irrelevant tags into the final prompt. The final prompt must still describe the current scene accurately and obey the JSON-only output rule.`;
+
+const SYSTEM_PROMPT_DEFAULT = LEGACY_SYSTEM_PROMPT;
+const DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT_DEFAULT;
+
+
 
 const DEFAULT_REFERENCE_PROMPT = 'This is character reference info. Prioritize maintaining these appearance, clothing, traits, and fixed settings; if in conflict with the current context, the current context prevails.';
 
@@ -86,7 +537,10 @@ const DEFAULT_SETTINGS = {
     useCustomJsonSchema: false,
     customJsonSchema: '',
     jsonSchemaProfiles: [],
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    promptMode: 'legacy',
+    legacySystemPrompt: SYSTEM_PROMPT_DEFAULT,
+    ragSystemPrompt: RAG_SYSTEM_PROMPT,
+    systemPrompt: SYSTEM_PROMPT_DEFAULT,
     prependMessage: '',
     apiProfiles: [],
     referencePrompt: DEFAULT_REFERENCE_PROMPT,
@@ -102,6 +556,19 @@ const DEFAULT_SETTINGS = {
     shortLlmLengthThreshold: 10,
     filterCiaJsonFromMain: false,
     filterCiaJsonFromPlugin: false,
+    promptRuleProfiles: {},
+    activePromptRuleProfile: '',
+    tagSeparator: ',',
+    enableDictionary: false,
+    activeDictionaryProfile: '',
+    dictionaries: {},
+    dictionaryRecallCount: 5,
+    dictionaryThreshold: 0.2,
+    embeddingSource: 'custom',
+    embeddingModel: '',
+    embeddingApiUrl: '',
+    embeddingApiKey: '',
+    embeddingProfiles: [],
 };
 
 const IMAGE_JSON_SCHEMA = {
@@ -163,8 +630,36 @@ function ensureSettings() {
     if (!settings.characterReferences || typeof settings.characterReferences !== 'object' || Array.isArray(settings.characterReferences)) {
         settings.characterReferences = {};
     }
+    if (!settings.promptRuleProfiles || typeof settings.promptRuleProfiles !== 'object' || Array.isArray(settings.promptRuleProfiles)) {
+        settings.promptRuleProfiles = {};
+    }
+    if (!settings.dictionaries || typeof settings.dictionaries !== 'object' || Array.isArray(settings.dictionaries)) {
+        settings.dictionaries = {};
+    }
+    if (typeof settings.tagSeparator !== 'string' || !settings.tagSeparator) {
+        settings.tagSeparator = ',';
+    }
+    if (settings.promptMode !== 'rag' && settings.promptMode !== 'legacy') {
+        if (settings.systemPromptPreset === 'minimal') {
+            settings.promptMode = 'legacy';
+        } else if (settings.systemPromptPreset === 'default' || settings.systemPromptPreset === 'sfw' || settings.systemPromptPreset === 'custom') {
+            settings.promptMode = 'legacy';
+        } else {
+            settings.promptMode = DEFAULT_SETTINGS.promptMode;
+        }
+    }
+    if (!settings.legacySystemPrompt) {
+        settings.legacySystemPrompt = settings.systemPromptDefault || settings.systemPromptCustom || settings.systemPrompt || SYSTEM_PROMPT_DEFAULT;
+    }
+    if (!settings.ragSystemPrompt) {
+        settings.ragSystemPrompt = RAG_SYSTEM_PROMPT;
+    }
+    settings.systemPrompt = getActiveSystemPrompt(settings);
     if (!Array.isArray(settings.apiProfiles)) {
         settings.apiProfiles = [];
+    }
+    if (!Array.isArray(settings.embeddingProfiles)) {
+        settings.embeddingProfiles = [];
     }
     if (!Array.isArray(settings.jsonSchemaProfiles)) {
         settings.jsonSchemaProfiles = [];
@@ -239,9 +734,22 @@ function escapeHtmlAttr(value) {
     return escapeHtml(value).replaceAll('`', '&#96;');
 }
 
+function getActiveSystemPrompt(settings = ensureSettings()) {
+    return settings.promptMode === 'rag'
+        ? String(settings.ragSystemPrompt || RAG_SYSTEM_PROMPT)
+        : String(settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT);
+}
+
 function getApiProfileList() {
     const settings = ensureSettings();
     return settings.apiProfiles
+        .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
+        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+function getEmbeddingProfileList() {
+    const settings = ensureSettings();
+    return settings.embeddingProfiles
         .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
 }
@@ -365,6 +873,84 @@ function removeApiProfileByName(name) {
     return settings.apiProfiles.length !== before;
 }
 
+function populateEmbeddingProfileSelect() {
+    const select = $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`);
+    if (!select.length) {
+        return;
+    }
+
+    const profiles = getEmbeddingProfileList();
+    const currentName = String(select.val() || '');
+    select.empty();
+    if (!profiles.length) {
+        select.append($('<option></option>').val('').text(t`No profiles saved`));
+        select.prop('disabled', true);
+        return;
+    }
+
+    for (const profile of profiles) {
+        select.append($('<option></option>').val(profile.name).text(profile.name));
+    }
+    select.prop('disabled', false);
+
+    const settings = ensureSettings();
+    if (currentName && profiles.some(x => String(x?.name || '') === currentName)) {
+        select.val(currentName);
+    } else {
+        const matched = profiles.find(x =>
+            String(x.embeddingModel || '').trim() === String(settings.embeddingModel || '').trim() &&
+            String(x.embeddingApiUrl || '').trim() === String(settings.embeddingApiUrl || '').trim(),
+        );
+        if (matched) {
+            select.val(matched.name);
+        }
+    }
+}
+
+function upsertEmbeddingProfile(name) {
+    const settings = ensureSettings();
+    name = String(name || '').trim();
+    if (!name) {
+        throw new Error(t`Profile name cannot be empty.`);
+    }
+
+    const next = {
+        name,
+        embeddingSource: 'custom',
+        embeddingModel: settings.embeddingModel,
+        embeddingApiUrl: settings.embeddingApiUrl,
+        embeddingApiKey: settings.embeddingApiKey,
+        updatedAt: new Date().toISOString(),
+    };
+    const index = settings.embeddingProfiles.findIndex(x => String(x?.name || '') === name);
+    if (index >= 0) {
+        settings.embeddingProfiles[index] = next;
+    } else {
+        settings.embeddingProfiles.push(next);
+    }
+}
+
+function applyEmbeddingProfileByName(name) {
+    const settings = ensureSettings();
+    name = String(name || '').trim();
+    const profile = settings.embeddingProfiles.find(x => String(x?.name || '') === name);
+    if (!profile) {
+        throw new Error(t`Profile not found.`);
+    }
+
+    settings.embeddingSource = 'custom';
+    settings.embeddingModel = String(profile.embeddingModel || '').trim();
+    settings.embeddingApiUrl = String(profile.embeddingApiUrl || '').trim();
+    settings.embeddingApiKey = String(profile.embeddingApiKey || '').trim();
+}
+
+function removeEmbeddingProfileByName(name) {
+    const settings = ensureSettings();
+    const before = settings.embeddingProfiles.length;
+    settings.embeddingProfiles = settings.embeddingProfiles.filter(x => String(x?.name || '') !== String(name || ''));
+    return settings.embeddingProfiles.length !== before;
+}
+
 function updateStatusUi() {
     const settings = ensureSettings();
     $('#cia_enabled').prop('checked', settings.enabled);
@@ -387,7 +973,8 @@ function updateStatusUi() {
     $('#cia_include_names').prop('checked', settings.includeNames);
     $('#cia_filter_cia_json_from_main').prop('checked', settings.filterCiaJsonFromMain);
     $('#cia_filter_cia_json_from_plugin').prop('checked', settings.filterCiaJsonFromPlugin);
-    $('#cia_system_prompt').val(settings.systemPrompt);
+    $('#cia_system_prompt').val(getActiveSystemPrompt(settings));
+    $('#cia_prompt_mode_select').val(settings.promptMode || 'legacy');
     $('#cia_prepend_message').val(settings.prependMessage);
     $('#cia_custom_json_schema').val(settings.customJsonSchema || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2));
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
@@ -400,6 +987,31 @@ function updateStatusUi() {
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
     updateReferenceStatusUi();
+
+    // Custom Dictionary & Embedding UI initialization
+    settings.embeddingSource = 'custom';
+    $('#cia_embed_model').val(settings.embeddingModel || '');
+    $('#cia_embed_url').val(settings.embeddingApiUrl || '');
+    $('#cia_embed_key').val(settings.embeddingApiKey || '');
+    $('#cia_enable_dict').prop('checked', !!settings.enableDictionary);
+    $('#cia_dict_recall_count').val(settings.dictionaryRecallCount || 5);
+    $('#cia_dict_threshold').val(settings.dictionaryThreshold || 0.20);
+    $('#cia_dict_threshold_val').text(Number(settings.dictionaryThreshold || 0.20).toFixed(2));
+
+    // Populate active dictionary dropdown
+    const dictSelect = $('#cia_dict_active_select');
+    dictSelect.empty();
+    dictSelect.append($('<option></option>').val('').text(t`None / Disabled`));
+    const dictKeys = Object.keys(settings.dictionaries || {});
+    for (const key of dictKeys) {
+        const dict = settings.dictionaries[key];
+        dictSelect.append($('<option></option>').val(key).text(`${dict.name} (${dict.itemsCount} tags)`));
+    }
+    dictSelect.val(settings.activeDictionaryProfile || '');
+
+    $('#cia_embed_url_row').show();
+    $('#cia_embed_key_row').show();
+    populateEmbeddingProfileSelect();
 }
 
 function saveFromUi() {
@@ -423,16 +1035,34 @@ function saveFromUi() {
     settings.includeNames = !!$('#cia_include_names').prop('checked');
     settings.filterCiaJsonFromMain = !!$('#cia_filter_cia_json_from_main').prop('checked');
     settings.filterCiaJsonFromPlugin = !!$('#cia_filter_cia_json_from_plugin').prop('checked');
-    settings.systemPrompt = String($('#cia_system_prompt').val() || DEFAULT_SYSTEM_PROMPT);
+
+    settings.promptMode = String($('#cia_prompt_mode_select').val() || DEFAULT_SETTINGS.promptMode) === 'rag' ? 'rag' : 'legacy';
+    settings.systemPrompt = getActiveSystemPrompt(settings);
+    $('#cia_system_prompt').val(settings.systemPrompt);
+
     settings.prependMessage = String($('#cia_prepend_message').val() || '');
     settings.customJsonSchema = String($('#cia_custom_json_schema').val() || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
     settings.autoClear = !!$('#cia_auto_clear').prop('checked');
     settings.autoGenerateOnRebuild = !!$('#cia_auto_generate_on_rebuild').prop('checked');
     settings.preventShortLlmImages = !!$('#cia_prevent_short_llm_images').prop('checked');
     settings.shortLlmLengthThreshold = clampInteger($('#cia_short_llm_length_threshold').val(), 1, 1000, DEFAULT_SETTINGS.shortLlmLengthThreshold || 10);
+    settings.embeddingSource = 'custom';
+    settings.embeddingModel = String($('#cia_embed_model').val() || '').trim();
+    settings.embeddingApiUrl = String($('#cia_embed_url').val() || '').trim();
+    settings.embeddingApiKey = String($('#cia_embed_key').val() || '').trim();
+    settings.enableDictionary = !!$('#cia_enable_dict').prop('checked');
+    settings.activeDictionaryProfile = String($('#cia_dict_active_select').val() || '');
+    settings.dictionaryRecallCount = clampInteger($('#cia_dict_recall_count').val(), 1, 50, 5);
+    settings.dictionaryThreshold = parseFloat($('#cia_dict_threshold').val()) || 0.20;
+    $('#cia_dict_threshold_val').text(settings.dictionaryThreshold.toFixed(2));
+
+    $('#cia_embed_url_row').show();
+    $('#cia_embed_key_row').show();
+
     saveSettingsDebounced();
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
     populateApiProfileSelect();
+    populateEmbeddingProfileSelect();
     renderJsonSchemaProfileOptions();
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
@@ -450,7 +1080,7 @@ async function createSettingsUi() {
     panel.off('.ciaSettings');
     panel.empty().append(html);
 
-    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_filter_cia_json_from_main, #cia_filter_cia_json_from_plugin, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images').on('change', saveFromUi);
+    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_filter_cia_json_from_main, #cia_filter_cia_json_from_plugin, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images, #cia_prompt_mode_select').on('change', saveFromUi);
     $('#cia_provider_mode, #cia_response_tokens, #cia_custom_url, #cia_custom_model, #cia_custom_api_key, #cia_custom_temperature, #cia_context_messages, #cia_context_chars, #cia_min_prompt_chars, #cia_system_prompt, #cia_prepend_message, #cia_custom_json_schema, #cia_short_llm_length_threshold').on('input change', saveFromUi);
     $('#cia_custom_model_select').on('change', function () {
         const value = String($(this).val() || '').trim();
@@ -518,12 +1148,20 @@ async function createSettingsUi() {
     });
 
     $('#cia_restore_prompt').on('click', () => {
-        $('#cia_system_prompt').val(DEFAULT_SYSTEM_PROMPT);
+        const settings = ensureSettings();
+        if (settings.promptMode === 'rag') {
+            settings.ragSystemPrompt = RAG_SYSTEM_PROMPT;
+        } else {
+            settings.legacySystemPrompt = SYSTEM_PROMPT_DEFAULT;
+        }
+        settings.systemPrompt = getActiveSystemPrompt(settings);
+        $('#cia_system_prompt').val(settings.systemPrompt);
         saveFromUi();
     });
     $('#cia_edit_system_prompt_btn').on('click', openSystemPromptEditor);
     $('#cia_edit_json_schema_btn').on('click', openCustomJsonSchemaEditor);
     $('#cia_character_reference').on('click', openCharacterReferenceEditor);
+    $('#cia_edit_prompt_rules_btn').on('click', openPromptRulesEditor);
     $('#cia_analyze_last').on('click', async () => {
         const messageId = getLastAssistantMessageId();
         if (messageId === null) {
@@ -564,6 +1202,7 @@ async function createSettingsUi() {
             'tab-llm': t`Configure AI model service endpoints, API keys, models, and save multiple custom API configurations.`,
             'tab-context': t`Control the number of recent chat history messages sent to the planner model and character filter settings.`,
             'tab-prompt': t`Write core system prompt instructions, custom JSON schema template structures, and prepended quality/visual prompts here.`,
+            'tab-dictionary': t`Configure custom embedding endpoints, import/delete semantic vector dictionaries, and manage vocabulary mapping settings.`,
             'tab-recycle': t`Preview, filter, and favorite all images generated in this session, or manage recovered/permanently deleted images in the recycle bin.`,
         };
         $(`#${PANEL_CONTAINER_ID} #cia_tab_desc`).text(descriptions[tabId] || '');
@@ -630,6 +1269,115 @@ async function createSettingsUi() {
     });
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_help`).on('click', () => {
         showGalleryFilterHelp();
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_enable_dict, #${PANEL_CONTAINER_ID} #cia_dict_active_select`).on('change', saveFromUi);
+    $(`#${PANEL_CONTAINER_ID} #cia_embed_model, #${PANEL_CONTAINER_ID} #cia_embed_url, #${PANEL_CONTAINER_ID} #cia_embed_key, #${PANEL_CONTAINER_ID} #cia_dict_recall_count`).on('input change', saveFromUi);
+    $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold`).on('input', function() {
+        const val = parseFloat($(this).val()) || 0.20;
+        $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold_val`).text(val.toFixed(2));
+    });
+    $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold`).on('change', saveFromUi);
+
+    $(`#${PANEL_CONTAINER_ID} #cia_embed_test_btn`).on('click', async () => {
+        await testEmbeddingConnection();
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_save`).on('click', async () => {
+        const settings = ensureSettings();
+        const suggested = settings.embeddingModel || 'embedding-config';
+        const name = await Popup.show.input(t`Save Embedding Profile`, t`Enter profile name`, suggested, { okButton: t`Save`, cancelButton: t`Cancel` });
+        if (name === null) {
+            return;
+        }
+        try {
+            saveFromUi();
+            upsertEmbeddingProfile(name);
+            saveSettingsDebounced();
+            populateEmbeddingProfileSelect();
+            $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val(String(name).trim());
+            toastr.success(t`Embedding configuration saved.`, 'Context Image Assistant');
+        } catch (error) {
+            toastr.error(String(error?.message || error), 'Context Image Assistant');
+        }
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_load`).on('click', () => {
+        const name = String($(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val() || '');
+        if (!name) {
+            return;
+        }
+        try {
+            applyEmbeddingProfileByName(name);
+            saveSettingsDebounced();
+            updateStatusUi();
+            toastr.success(t`Profile loaded: ${name}`, 'Context Image Assistant');
+        } catch (error) {
+            toastr.error(String(error?.message || error), 'Context Image Assistant');
+        }
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_delete`).on('click', async () => {
+        const name = String($(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val() || '');
+        if (!name) {
+            return;
+        }
+        const confirmed = await Popup.show.confirm(t`Delete Embedding Profile`, t`Are you sure you want to delete embedding profile "${name}"?`);
+        if (!confirmed) {
+            return;
+        }
+        if (removeEmbeddingProfileByName(name)) {
+            saveSettingsDebounced();
+            populateEmbeddingProfileSelect();
+            toastr.info(t`Profile deleted: ${name}`, 'Context Image Assistant');
+        }
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_dict_import_trigger_btn`).on('click', () => {
+        $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).val('');
+        $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).click();
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).on('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const name = String($(`#${PANEL_CONTAINER_ID} #cia_dict_import_name`).val() || '').trim();
+        if (!name) {
+            toastr.warning(t`Please enter a dictionary name first.`, 'Context Image Assistant');
+            return;
+        }
+        await importDictionary(name, file);
+    });
+
+    $(`#${PANEL_CONTAINER_ID} #cia_dict_delete_btn`).on('click', async () => {
+        const name = String($(`#${PANEL_CONTAINER_ID} #cia_dict_active_select`).val() || '');
+        if (!name) {
+            toastr.warning(t`No dictionary selected to delete.`, 'Context Image Assistant');
+            return;
+        }
+        const confirm = await Popup.show.confirm(t`Delete Dictionary`, t`Are you sure you want to delete the dictionary "${name}"?`);
+        if (!confirm) return;
+
+        try {
+            const settings = ensureSettings();
+            const dict = settings.dictionaries[name];
+            if (dict) {
+                await fetch('/api/vector/purge', {
+                    method: 'POST',
+                    headers: getRequestHeaders(),
+                    body: JSON.stringify({ collectionId: dict.collectionId })
+                });
+                delete settings.dictionaries[name];
+                if (settings.activeDictionaryProfile === name) {
+                    settings.activeDictionaryProfile = '';
+                }
+                saveSettingsDebounced();
+                updateStatusUi();
+                toastr.success(t`Dictionary "${name}" deleted successfully.`, 'Context Image Assistant');
+            }
+        } catch (err) {
+            toastr.error(t`Failed to delete dictionary: ${err.message}`, 'Context Image Assistant');
+        }
     });
 
     // Bind large grid buttons
@@ -853,6 +1601,159 @@ function resolveMessageTarget(messageId, expectedSnapshot = null) {
     return { messageId, message };
 }
 
+function normalizeTag(tag) {
+    if (typeof tag !== 'string') return '';
+    return tag.trim().toLowerCase().replace(/_/g, ' ');
+}
+
+function tokenizeCondition(cond) {
+    if (!cond) return [];
+    // Negative lookahead ensures we don't consume operators (AND, OR, NOT, &&, ||, !, parentheses) when matching multi-word tags
+    const tokenRegex = /"[^"]+"|'[^']+'|\(|\)|&&|\|\||!|\bAND\b|\bOR\b|\bNOT\b|[^()&|!\s]+(?:\s+(?!\b(?:AND|OR|NOT)\b|&&|\|\||[()!])[^()&|!\s]+)*/gi;
+    const tokens = [];
+    let match;
+    while ((match = tokenRegex.exec(cond)) !== null) {
+        let t = match[0].trim();
+        if (!t) continue;
+        if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+            t = t.slice(1, -1).trim();
+        }
+        if (t) {
+            tokens.push(t);
+        }
+    }
+    return tokens;
+}
+
+function evaluateTriggerCondition(condition, positivePrompt, negativePrompt, separator) {
+    if (!condition || !condition.trim()) {
+        return true;
+    }
+    const sep = separator || ',';
+    const cleanPos = String(positivePrompt || '').toLowerCase();
+    const cleanNeg = String(negativePrompt || '').toLowerCase();
+
+    const normPos = cleanPos.replace(/_/g, ' ');
+    const normNeg = cleanNeg.replace(/_/g, ' ');
+    const normCombined = normPos + ' ' + normNeg;
+
+    const posTags = cleanPos.split(sep).map(x => normalizeTag(x)).filter(Boolean);
+    const negTags = cleanNeg.split(sep).map(x => normalizeTag(x)).filter(Boolean);
+    const allTags = [...posTags, ...negTags];
+
+    const tokens = tokenizeCondition(condition);
+    const resultTokens = [];
+
+    for (const token of tokens) {
+        const upperToken = token.toUpperCase();
+        if (upperToken === 'AND' || token === '&&') {
+            resultTokens.push('&&');
+        } else if (upperToken === 'OR' || token === '||') {
+            resultTokens.push('||');
+        } else if (upperToken === 'NOT' || token === '!') {
+            resultTokens.push('!');
+        } else if (token === '(' || token === ')') {
+            resultTokens.push(token);
+        } else {
+            const term = normalizeTag(token);
+            const matched = allTags.includes(term) || normCombined.includes(term);
+            resultTokens.push(matched ? 'true' : 'false');
+        }
+    }
+
+    const expr = resultTokens.join(' ');
+    if (!expr) return true;
+    if (/^[truefals&|!()\s]+$/.test(expr)) {
+        try {
+            return Function(`return (${expr});`)();
+        } catch (e) {
+            console.error('[CIA] Error evaluating condition:', expr, e);
+            return false;
+        }
+    }
+    return false;
+}
+
+function applyPromptRules(prompt, negativePrompt) {
+    const settings = ensureSettings();
+    const activeProfile = settings.activePromptRuleProfile;
+    if (!activeProfile) {
+        return { prompt, negative_prompt: negativePrompt };
+    }
+    const profile = settings.promptRuleProfiles[activeProfile];
+    if (!profile || !Array.isArray(profile.rules) || profile.rules.length === 0) {
+        return { prompt, negative_prompt: negativePrompt };
+    }
+
+    let activePos = String(prompt || '');
+    let activeNeg = String(negativePrompt || '');
+    const sep = settings.tagSeparator || ',';
+
+    const rules = profile.rules.filter(r => r && r.enabled);
+
+    for (const rule of rules) {
+        const target = rule.target || 'positive';
+        const type = rule.type || 'delete';
+
+        const isTriggered = evaluateTriggerCondition(rule.trigger, activePos, activeNeg, sep);
+        if (!isTriggered) {
+            continue;
+        }
+
+        const ruleTags = String(rule.tags || '').split(sep).map(x => x.trim()).filter(Boolean);
+        if (ruleTags.length === 0) continue;
+
+        // Deduplicate rule tags from itself
+        const uniqueRuleTags = [];
+        for (const tag of ruleTags) {
+            const norm = normalizeTag(tag);
+            if (!uniqueRuleTags.some(t => normalizeTag(t) === norm)) {
+                uniqueRuleTags.push(tag);
+            }
+        }
+
+        const processPrompt = (txt, isDelete) => {
+            let tags = txt.split(sep).map(x => x.trim()).filter(Boolean);
+            if (isDelete) {
+                const lowerDeletes = uniqueRuleTags.map(x => normalizeTag(x));
+                tags = tags.filter(tag => !lowerDeletes.includes(normalizeTag(tag)));
+            } else {
+                const normalizedExisting = tags.map(x => normalizeTag(x));
+                const toAdd = uniqueRuleTags.filter(tag => !normalizedExisting.includes(normalizeTag(tag)));
+                if (toAdd.length > 0) {
+                    let insertIndex = -1;
+                    const anchor = String(rule.insertAfter || '').trim();
+                    if (anchor) {
+                        insertIndex = tags.findIndex(tag => normalizeTag(tag) === normalizeTag(anchor));
+                    } else {
+                        const triggerTokens = tokenizeCondition(rule.trigger);
+                        if (triggerTokens.length === 1) {
+                            const possibleAnchor = triggerTokens[0];
+                            insertIndex = tags.findIndex(tag => normalizeTag(tag) === normalizeTag(possibleAnchor));
+                        }
+                    }
+
+                    if (insertIndex >= 0) {
+                        tags.splice(insertIndex + 1, 0, ...toAdd);
+                    } else {
+                        tags.push(...toAdd);
+                    }
+                }
+            }
+            return tags.join(sep + ' ');
+        };
+
+        if (target === 'positive' || target === 'both') {
+            activePos = processPrompt(activePos, type === 'delete');
+        }
+        if (target === 'negative' || target === 'both') {
+            activeNeg = processPrompt(activeNeg, type === 'delete');
+        }
+    }
+
+    return { prompt: activePos, negative_prompt: activeNeg };
+}
+
 function stripCandidateJsonBlocks(text) {
     return String(text || '').replace(CANDIDATE_JSON_BLOCK_REGEX, '').trimEnd();
 }
@@ -870,6 +1771,10 @@ function writeCandidateJsonToMessage(messageId, parsed) {
     if (!message || !parsed || typeof parsed !== 'object') {
         return;
     }
+
+    const filtered = applyPromptRules(parsed.prompt, parsed.negative_prompt);
+    parsed.prompt = filtered.prompt;
+    parsed.negative_prompt = filtered.negative_prompt;
 
     const baseText = stripCandidateJsonBlocks(getMessageText(message));
     const block = buildCandidateJsonBlock(parsed);
@@ -935,7 +1840,7 @@ function getComfyPlaceholderDefault(name, fallback = 0, range = null) {
     return clampNumber(value, min, max, fallback);
 }
 
-function buildUserPrompt(messageId, { imageReference = null } = {}) {
+function buildUserPrompt(messageId, { imageReference = null, ragTags = '' } = {}) {
     const settings = ensureSettings();
     const numericProps = getNumericSchemaProperties(settings);
     const defaultsStr = numericProps.map(prop => {
@@ -947,6 +1852,10 @@ function buildUserPrompt(messageId, { imageReference = null } = {}) {
     const prependMessage = String(settings.prependMessage || '').trim();
     if (prependMessage) {
         parts.push('[Additional Info Start]', prependMessage, '[Additional Info End]', '');
+    }
+
+    if (ragTags) {
+        parts.push('[RAG Tags Start]', `知识库召回参考标签 (RAG Tags): ${ragTags}`, '[RAG Tags End]', '');
     }
 
     if (imageReference) {
@@ -1082,13 +1991,22 @@ function getSavedReferenceEntries() {
 
 async function openSystemPromptEditor() {
     const settings = ensureSettings();
-    const currentPrompt = settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    const tempPrompts = {
+        legacy: settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT,
+        rag: settings.ragSystemPrompt || RAG_SYSTEM_PROMPT,
+    };
+    let lastMode = settings.promptMode === 'rag' ? 'rag' : 'legacy';
+
     const content = $(applyLocale(`
         <div class="cia-prompt-editor-wrapper">
-            <div class="cia-ref-toolbar-row" style="margin-bottom: 4px;">
-                <div class="cia-ref-selector-group">
+            <div class="cia-ref-toolbar-row" style="margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
+                <div class="cia-ref-selector-group" style="display: flex; align-items: center; gap: 8px;">
                     <i class="fa-solid fa-gears" style="color: var(--SmartThemeQuoteColor, #78beff); margin-right: 6px;"></i>
                     <span style="font-size: 1.05em; font-weight: 600;" data-i18n="System Instructions Configuration (System Prompt)">System Instructions Configuration (System Prompt)</span>
+                    <select id="cia_prompt_mode_popup_select" class="text_pole" style="width: auto; margin: 0; padding: 2px 8px; font-size: 0.9em; height: auto;">
+                        <option value="legacy" data-i18n="Legacy System Prompt">Legacy System Prompt</option>
+                        <option value="rag" data-i18n="RAG System Prompt">RAG System Prompt</option>
+                    </select>
                 </div>
                 <div class="cia-ref-toolbar">
                     <button id="cia_prompt_reset_btn" class="cia-icon-btn" type="button" data-i18n="[title]Reset to default system prompt" title="Reset to default system prompt">
@@ -1108,10 +2026,20 @@ async function openSystemPromptEditor() {
         </div>
     `));
 
-    content.find('#cia_prompt_editor_textarea').val(currentPrompt);
+    content.find('#cia_prompt_editor_textarea').val(tempPrompts[lastMode]);
+    content.find('#cia_prompt_mode_popup_select').val(lastMode);
+
+    content.find('#cia_prompt_mode_popup_select').on('change', function() {
+        const newMode = $(this).val() === 'rag' ? 'rag' : 'legacy';
+        tempPrompts[lastMode] = content.find('#cia_prompt_editor_textarea').val();
+        content.find('#cia_prompt_editor_textarea').val(tempPrompts[newMode]);
+        lastMode = newMode;
+    });
 
     content.find('#cia_prompt_reset_btn').on('click', () => {
-        content.find('#cia_prompt_editor_textarea').val(DEFAULT_SYSTEM_PROMPT);
+        const currentMode = content.find('#cia_prompt_mode_popup_select').val() === 'rag' ? 'rag' : 'legacy';
+        const resetVal = currentMode === 'rag' ? RAG_SYSTEM_PROMPT : SYSTEM_PROMPT_DEFAULT;
+        content.find('#cia_prompt_editor_textarea').val(resetVal);
         toastr.info(t`Restored default system prompt. Click "Save" below to apply changes.`, 'Context Image Assistant');
     });
 
@@ -1129,7 +2057,16 @@ async function openSystemPromptEditor() {
     }
 
     const edited = String(content.find('#cia_prompt_editor_textarea').val() || '').trim();
-    $('#cia_system_prompt').val(edited).trigger('input');
+    const selectedMode = content.find('#cia_prompt_mode_popup_select').val() === 'rag' ? 'rag' : 'legacy';
+    tempPrompts[selectedMode] = edited;
+
+    settings.legacySystemPrompt = tempPrompts.legacy;
+    settings.ragSystemPrompt = tempPrompts.rag;
+    settings.promptMode = selectedMode;
+    settings.systemPrompt = getActiveSystemPrompt(settings);
+
+    $('#cia_prompt_mode_select').val(selectedMode);
+    $('#cia_system_prompt').val(settings.systemPrompt);
     saveFromUi();
     toastr.success(t`System prompt saved successfully.`, 'Context Image Assistant');
 }
@@ -2010,6 +2947,442 @@ async function openCharacterReferenceEditor() {
     await popup.show();
 }
 
+async function openPromptRulesHelp() {
+    const helpContent = $(applyLocale(`
+        <div class="cia-filter-help-wrapper" style="font-size: 0.92em; line-height: 1.6; max-height: 70vh; overflow-y: auto; padding: 10px 15px; color: var(--text-color); font-family: system-ui, -apple-system, sans-serif;">
+            <p style="margin-top: 0; opacity: 0.85; font-size: 1.05em;" data-i18n="Prompt Rules Help Intro">You can configure prompt tag filtering and addition rules to dynamically modify generator prompts (positive and negative):</p>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin: 16px 0;">
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 10px 14px;">
+                    <div style="font-weight: 600; color: var(--SmartThemeQuoteColor, #78beff); margin-bottom: 4px;" data-i18n="Trigger Condition Guide Title">1. Trigger Condition Boolean Syntax</div>
+                    <div style="opacity: 0.9; font-size: 0.9em;">
+                        <span data-i18n="Trigger Condition Guide Intro">Supports tag presence checks in the prompt using logical operators (case-insensitive):</span>
+                        <ul style="margin: 6px 0 0 16px; padding: 0;">
+                            <li><strong style="color: #ef4444;">${t('Logical Operator NOT')}</strong>: <span>${t("Negation. e.g. <code>!indoor</code> triggers when prompt does not contain 'indoor'.")}</span></li>
+                            <li><strong style="color: #10b981;">${t('Logical Operator AND')}</strong>: <span>${t("Conjunction. e.g. <code>swimsuit AND outdoor</code> triggers when both swimsuit and outdoor are present.")}</span></li>
+                            <li><strong style="color: #3b82f6;">${t('Logical Operator OR')}</strong>: <span>${t("Disjunction. e.g. <code>beach OR pool</code> triggers when either beach or pool is present.")}</span></li>
+                            <li><strong>${t('Logical Operator Parentheses')}</strong>: <span>${t("Precedence control. e.g. <code>(beach OR pool) AND NOT indoor</code>.")}</span></li>
+                            <li><strong>${t('Logical Operator Empty')}</strong>: <span>${t("Always active, unconditional execution.")}</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 10px 14px;">
+                    <div style="font-weight: 600; color: var(--SmartThemeQuoteColor, #78beff); margin-bottom: 4px;" data-i18n="Tag Insertion Guide Title">2. Tag Insertion (Insert After)</div>
+                    <div style="opacity: 0.9; font-size: 0.9em;">
+                        <span data-i18n="Tag Insertion Guide Intro">When the rule type is 'Add', you can specify where to insert the new tag in the current prompt:</span>
+                        <ul style="margin: 6px 0 0 16px; padding: 0;">
+                            <li>${t("Enter a specific tag name (e.g. <code>swimsuit</code>), and the new tag will be inserted immediately after it.")}</li>
+                            <li>${t("If empty: if trigger condition is a single tag (e.g. <code>outdoor</code>), it will automatically insert after <code>outdoor</code>; otherwise, it appends to the end.")}</li>
+                            <li>${t("Duplicates are automatically checked to prevent inserting the same tag multiple times.")}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <p style="margin-bottom: 0; opacity: 0.7; font-size: 0.85em; text-align: center;" data-i18n="Prompt Rules Help Outro">💡 Hint: All tag parsing rules respect your configured global Tag Separator (default is comma).</p>
+        </div>
+    `));
+
+    const popup = new Popup(helpContent, POPUP_TYPE.TEXT, t`Prompt Tag Rules Guide`, {
+        okButton: t`Close`,
+        cancelButton: null,
+    });
+    await popup.show();
+}
+
+async function openPromptRulesEditor() {
+    const settings = ensureSettings();
+
+    if (Object.keys(settings.promptRuleProfiles).length === 0) {
+        settings.promptRuleProfiles['profile:default'] = {
+            label: t`Default Profile`,
+            rules: []
+        };
+        settings.activePromptRuleProfile = 'profile:default';
+    }
+    if (!settings.activePromptRuleProfile || !settings.promptRuleProfiles[settings.activePromptRuleProfile]) {
+        settings.activePromptRuleProfile = Object.keys(settings.promptRuleProfiles)[0];
+    }
+
+    const content = $(applyLocale(`
+        <div class="cia-rules-wrapper">
+            <div class="cia-rules-toolbar-row">
+                <div class="cia-rules-profile-group">
+                    <span data-i18n="Profile:">Profile:</span>
+                    <select id="cia_rules_profile_select" class="text_pole"></select>
+                </div>
+                <div class="cia-rules-toolbar">
+                    <button id="cia_rules_rename_btn" class="cia-icon-btn" type="button" data-i18n="[title]Rename current schema profile" title="Rename current schema profile">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button id="cia_rules_new_btn" class="cia-icon-btn" type="button" data-i18n="[title]Create new schema profile" title="Create new schema profile">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <button id="cia_rules_delete_btn" class="cia-icon-btn" type="button" data-i18n="[title]Delete current schema profile" title="Delete current schema profile">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                    <span style="border-left: 1px solid rgba(255, 255, 255, 0.1); height: 20px; margin: 0 4px;"></span>
+                    <span data-i18n="Tag Separator:" style="font-size: 0.88em; font-weight: 600; opacity: 0.85; white-space: nowrap; margin-left: 4px;">Tag Separator:</span>
+                    <input type="text" id="cia_rules_separator_input" class="text_pole" maxlength="3" style="width: 40px !important; text-align: center; height: 32px !important; padding: 0 !important; margin: 0;" />
+                    <button id="cia_rules_help_btn" class="cia-icon-btn" type="button" data-i18n="[title]Prompt Rules Help Tooltip" title="Rules guide">
+                        <i class="fa-solid fa-circle-question"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="cia-rules-list-container" id="cia_rules_list">
+                <!-- Rules list items render here -->
+            </div>
+
+            <div class="cia-rule-form-container" id="cia_rule_form" style="display: none;">
+                <div class="cia-rule-form-title">
+                    <span id="cia_rule_form_header" data-i18n="Add New Rule">Add New Rule</span>
+                </div>
+                <div class="cia-rule-form-grid">
+                    <div class="cia-rule-form-field">
+                        <label data-i18n="Rule Type">Rule Type</label>
+                        <select id="cia_rule_form_type" class="text_pole">
+                            <option value="delete" data-i18n="Delete Tag">Delete Tag</option>
+                            <option value="add" data-i18n="Add Tag">Add Tag</option>
+                        </select>
+                    </div>
+                    <div class="cia-rule-form-field">
+                        <label data-i18n="Target Prompt">Target Prompt</label>
+                        <select id="cia_rule_form_target" class="text_pole">
+                            <option value="positive" data-i18n="Positive Prompt (Positive)">Positive Prompt (Positive)</option>
+                            <option value="negative" data-i18n="Negative Prompt (Negative)">Negative Prompt (Negative)</option>
+                            <option value="both" data-i18n="Both Prompts">Both Prompts</option>
+                        </select>
+                    </div>
+                    <div class="cia-rule-form-field">
+                        <label data-i18n="Trigger Condition">Trigger Condition</label>
+                        <input type="text" id="cia_rule_form_trigger" class="text_pole" placeholder="e.g. swimsuit AND outdoor" />
+                    </div>
+                    <div class="cia-rule-form-field" id="cia_rule_form_insert_after_field">
+                        <label data-i18n="Insert After Tag">Insert After Tag</label>
+                        <input type="text" id="cia_rule_form_insert_after" class="text_pole" placeholder="e.g. swimsuit (leave blank for auto)" />
+                    </div>
+                    <div class="cia-rule-form-field full-width">
+                        <label data-i18n="Tags">Tags</label>
+                        <textarea id="cia_rule_form_tags" class="text_pole" rows="2" placeholder="e.g. wet skin, droplets" style="resize: vertical;"></textarea>
+                    </div>
+                </div>
+                <div class="cia-rule-form-actions">
+                    <button id="cia_rule_form_cancel" class="menu_button" type="button" data-i18n="Cancel">Cancel</button>
+                    <button id="cia_rule_form_save" class="menu_button" type="button" data-i18n="Save" style="background: var(--SmartThemeQuoteColor, #78beff); color: #000; font-weight: bold;">Save</button>
+                </div>
+            </div>
+
+            <div class="cia-rules-add-row">
+                <button id="cia_rules_add_rule_btn" class="cia-rules-add-btn" type="button">
+                    <i class="fa-solid fa-circle-plus"></i> <span data-i18n="Add New Rule">Add New Rule</span>
+                </button>
+            </div>
+        </div>
+    `));
+
+    let editingRuleId = null;
+
+    const populateProfilesSelect = (activeKey) => {
+        const select = content.find('#cia_rules_profile_select');
+        select.empty();
+        for (const [key, value] of Object.entries(settings.promptRuleProfiles)) {
+            const option = $('<option></option>').attr('value', key).text(value.label || key);
+            if (key === activeKey) {
+                option.attr('selected', 'selected');
+            }
+            select.append(option);
+        }
+    };
+
+    const renderRulesList = () => {
+        const list = content.find('#cia_rules_list');
+        list.empty();
+        const selectVal = content.find('#cia_rules_profile_select').val();
+        if (!selectVal) return;
+
+        const profile = settings.promptRuleProfiles[selectVal];
+        if (!profile || !Array.isArray(profile.rules) || profile.rules.length === 0) {
+            list.append($(applyLocale(`<div class="cia-recycle-empty" data-i18n="No rules configured in this profile.">No rules configured in this profile.</div>`)));
+            return;
+        }
+
+        profile.rules.forEach((rule, idx) => {
+            if (!rule) return;
+            const isEnabled = !!rule.enabled;
+            const targetText = rule.target === 'positive' ? t('Positive') : rule.target === 'negative' ? t('Negative') : t('Both');
+            const typeText = rule.type === 'delete' ? t('Delete') : t('Add');
+            const triggerText = rule.trigger ? rule.trigger : t('Always Active');
+            const insertAfterText = rule.insertAfter ? ` (after: ${rule.insertAfter})` : '';
+
+            const row = $(applyLocale(`
+                <div class="cia-rule-card ${isEnabled ? '' : 'disabled'}" data-id="${escapeHtmlAttr(rule.id)}">
+                    <div class="cia-rule-drag-controls">
+                        <button class="cia-rule-drag-btn btn-up" type="button" title="${t('Move Up')}"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button class="cia-rule-drag-btn btn-down" type="button" title="${t('Move Down')}"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
+                    <input type="checkbox" class="cia-rule-card-checkbox" ${isEnabled ? 'checked' : ''} title="${t('Enable/Disable rule')}" />
+                    <div class="cia-rule-info">
+                        <div class="cia-rule-meta-row">
+                            <span class="cia-rule-badge ${rule.type === 'delete' ? 'delete' : 'add'}">${typeText}</span>
+                            <span class="cia-rule-target">${targetText}</span>
+                            <span class="cia-rule-trigger-cond">${triggerText}</span>
+                        </div>
+                        <div class="cia-rule-tags-display">
+                            <strong>${rule.type === 'delete' ? t('Filter:') : t('Insert:')}</strong> ${escapeHtml(rule.tags)}${insertAfterText}
+                        </div>
+                    </div>
+                    <div class="cia-rule-actions-cell">
+                        <button class="cia-icon-btn btn-edit" type="button" title="${t('Edit')}"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button class="cia-icon-btn btn-delete" type="button" title="${t('Delete')}" style="color: var(--red, #cf4646);"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+            `));
+
+            row.find('.cia-rule-card-checkbox').on('change', function () {
+                rule.enabled = $(this).prop('checked');
+                row.toggleClass('disabled', !rule.enabled);
+                saveSettingsDebounced();
+            });
+
+            row.find('.btn-up').on('click', () => {
+                if (idx === 0) return;
+                const temp = profile.rules[idx];
+                profile.rules[idx] = profile.rules[idx - 1];
+                profile.rules[idx - 1] = temp;
+                saveSettingsDebounced();
+                renderRulesList();
+            });
+
+            row.find('.btn-down').on('click', () => {
+                if (idx === profile.rules.length - 1) return;
+                const temp = profile.rules[idx];
+                profile.rules[idx] = profile.rules[idx + 1];
+                profile.rules[idx + 1] = temp;
+                saveSettingsDebounced();
+                renderRulesList();
+            });
+
+            row.find('.btn-edit').on('click', () => {
+                openRuleForm(rule.id);
+            });
+
+            row.find('.btn-delete').on('click', async () => {
+                const confirm = await Popup.show.confirm(t`Delete Rule`, t`Are you sure you want to delete this rule?`);
+                if (confirm === POPUP_RESULT.AFFIRMATIVE) {
+                    profile.rules.splice(idx, 1);
+                    saveSettingsDebounced();
+                    renderRulesList();
+                    if (editingRuleId === rule.id) {
+                        closeRuleForm();
+                    }
+                }
+            });
+
+            list.append(row);
+        });
+    };
+
+    const openRuleForm = (ruleId) => {
+        editingRuleId = ruleId;
+        const form = content.find('#cia_rule_form');
+        const header = content.find('#cia_rule_form_header');
+
+        if (ruleId === null) {
+            header.text(t('Add New Rule'));
+            content.find('#cia_rule_form_type').val('delete');
+            content.find('#cia_rule_form_target').val('positive');
+            content.find('#cia_rule_form_trigger').val('');
+            content.find('#cia_rule_form_insert_after').val('');
+            content.find('#cia_rule_form_tags').val('');
+            content.find('#cia_rule_form_insert_after_field').hide();
+        } else {
+            header.text(t('Edit Rule'));
+            const selectVal = content.find('#cia_rules_profile_select').val();
+            const profile = settings.promptRuleProfiles[selectVal];
+            const rule = profile.rules.find(r => r.id === ruleId);
+            if (rule) {
+                content.find('#cia_rule_form_type').val(rule.type);
+                content.find('#cia_rule_form_target').val(rule.target);
+                content.find('#cia_rule_form_trigger').val(rule.trigger);
+                content.find('#cia_rule_form_insert_after').val(rule.insertAfter || '');
+                content.find('#cia_rule_form_tags').val(rule.tags);
+                if (rule.type === 'add') {
+                    content.find('#cia_rule_form_insert_after_field').show();
+                } else {
+                    content.find('#cia_rule_form_insert_after_field').hide();
+                }
+            }
+        }
+        form.slideDown(200);
+        content.find('#cia_rules_add_rule_btn').hide();
+    };
+
+    const closeRuleForm = () => {
+        editingRuleId = null;
+        content.find('#cia_rule_form').slideUp(200);
+        content.find('#cia_rules_add_rule_btn').show();
+    };
+
+    content.find('#cia_rule_form_type').on('change', function () {
+        const type = $(this).val();
+        if (type === 'add') {
+            content.find('#cia_rule_form_insert_after_field').show();
+        } else {
+            content.find('#cia_rule_form_insert_after_field').hide();
+        }
+    });
+
+    content.find('#cia_rules_separator_input').val(settings.tagSeparator || ',');
+    content.find('#cia_rules_separator_input').on('input', function () {
+        const val = $(this).val() || ',';
+        settings.tagSeparator = val;
+        saveSettingsDebounced();
+    });
+
+    populateProfilesSelect(settings.activePromptRuleProfile);
+    renderRulesList();
+
+    content.find('#cia_rules_profile_select').on('change', function () {
+        const val = $(this).val();
+        settings.activePromptRuleProfile = val;
+        saveSettingsDebounced();
+        closeRuleForm();
+        renderRulesList();
+    });
+
+    content.find('#cia_rules_rename_btn').on('click', async () => {
+        const selectVal = content.find('#cia_rules_profile_select').val();
+        if (!selectVal) return;
+        const entry = settings.promptRuleProfiles[selectVal];
+        const label = entry?.label || selectVal;
+        const newName = await Popup.show.input(t`Rename Profile`, t`Please enter the new name of prompt rules profile "${label}":`);
+        const trimmed = String(newName || '').trim();
+        if (trimmed) {
+            entry.label = trimmed;
+            saveSettingsDebounced();
+            populateProfilesSelect(selectVal);
+        }
+    });
+
+    content.find('#cia_rules_new_btn').on('click', async () => {
+        const newName = await Popup.show.input(t`New Profile`, t`Please enter the name of the new prompt rules profile:`);
+        const trimmed = String(newName || '').trim();
+        if (trimmed) {
+            const key = `profile:${Date.now()}`;
+            settings.promptRuleProfiles[key] = {
+                label: trimmed,
+                rules: []
+            };
+            settings.activePromptRuleProfile = key;
+            saveSettingsDebounced();
+            populateProfilesSelect(key);
+            closeRuleForm();
+            renderRulesList();
+        }
+    });
+
+    content.find('#cia_rules_delete_btn').on('click', async () => {
+        const selectVal = content.find('#cia_rules_profile_select').val();
+        if (!selectVal) return;
+        if (Object.keys(settings.promptRuleProfiles).length <= 1) {
+            toastr.warning(t`Cannot delete the only profile.`, 'Context Image Assistant');
+            return;
+        }
+        const entry = settings.promptRuleProfiles[selectVal];
+        const label = entry?.label || selectVal;
+        const confirm = await Popup.show.confirm(t`Delete Profile`, t`Are you sure you want to permanently delete profile "${label}"?`);
+        if (confirm === POPUP_RESULT.AFFIRMATIVE) {
+            delete settings.promptRuleProfiles[selectVal];
+            const nextKey = Object.keys(settings.promptRuleProfiles)[0];
+            settings.activePromptRuleProfile = nextKey;
+            saveSettingsDebounced();
+            populateProfilesSelect(nextKey);
+            closeRuleForm();
+            renderRulesList();
+        }
+    });
+
+    content.find('#cia_rules_add_rule_btn').on('click', () => {
+        openRuleForm(null);
+    });
+
+    content.find('#cia_rule_form_cancel').on('click', () => {
+        closeRuleForm();
+    });
+
+    content.find('#cia_rule_form_save').on('click', () => {
+        const selectVal = content.find('#cia_rules_profile_select').val();
+        if (!selectVal) return;
+
+        const profile = settings.promptRuleProfiles[selectVal];
+        const type = content.find('#cia_rule_form_type').val();
+        const target = content.find('#cia_rule_form_target').val();
+        const trigger = String(content.find('#cia_rule_form_trigger').val() || '').trim();
+        const insertAfter = String(content.find('#cia_rule_form_insert_after').val() || '').trim();
+        const tags = String(content.find('#cia_rule_form_tags').val() || '').trim();
+
+        if (!tags) {
+            toastr.warning(t`Tags cannot be empty.`, 'Context Image Assistant');
+            return;
+        }
+
+        if (trigger) {
+            try {
+                tokenizeCondition(trigger);
+            } catch (e) {
+                toastr.error(t`Invalid trigger condition expression syntax.`, 'Context Image Assistant');
+                return;
+            }
+        }
+
+        if (editingRuleId === null) {
+            const newRule = {
+                id: `rule:${Date.now()}`,
+                enabled: true,
+                type,
+                target,
+                trigger,
+                insertAfter: type === 'add' ? insertAfter : '',
+                tags
+            };
+            if (!Array.isArray(profile.rules)) {
+                profile.rules = [];
+            }
+            profile.rules.push(newRule);
+            toastr.success(t`Rule added.`, 'Context Image Assistant');
+        } else {
+            const rule = profile.rules.find(r => r.id === editingRuleId);
+            if (rule) {
+                rule.type = type;
+                rule.target = target;
+                rule.trigger = trigger;
+                rule.insertAfter = type === 'add' ? insertAfter : '';
+                rule.tags = tags;
+                toastr.success(t`Rule updated.`, 'Context Image Assistant');
+            }
+        }
+
+        saveSettingsDebounced();
+        closeRuleForm();
+        renderRulesList();
+    });
+
+    content.find('#cia_rules_help_btn').on('click', () => {
+        openPromptRulesHelp();
+    });
+
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, null, {
+        okButton: t`Close`,
+        cancelButton: null,
+        wide: true,
+        large: true,
+        leftAlign: true,
+    });
+    await popup.show();
+}
+
 async function requestImageCandidate(messageId, { force = false, manual = false, imageReference = null, autoGenerate = null, expectedSnapshot = null, silentIfStale = false } = {}) {
     const settings = ensureSettings();
     const autoPipelineEnabled = Boolean(settings.enabled || settings.autoGenerate);
@@ -2181,7 +3554,18 @@ async function saveChatWhenGeneratorIdle() {
 
 async function callPlannerLlm(messageId, { imageReference = null, signal = null } = {}) {
     const settings = ensureSettings();
-    const userPrompt = buildUserPrompt(messageId, { imageReference });
+    settings.systemPrompt = getActiveSystemPrompt(settings);
+
+    let ragTags = '';
+    if (settings.promptMode === 'rag' && settings.enableDictionary && settings.activeDictionaryProfile) {
+        const lastMessage = chat[messageId];
+        const text = String(getMessageText(lastMessage) || '').trim();
+        if (text) {
+            ragTags = await queryDictionaryRag(text);
+        }
+    }
+
+    const userPrompt = buildUserPrompt(messageId, { imageReference, ragTags });
 
     if (settings.providerMode === 'custom_proxy') {
         return callCustomProxyLlm(settings, userPrompt, signal);
@@ -2824,6 +4208,14 @@ function renderMessageControls(messageId) {
             .html(`<i class="fa-solid fa-ban"></i> ${t`Cancel`}`));
     }
 
+    if (data.status === 'error') {
+        row.append($('<button type="button" class="cia-msg-btn cia-retry-candidate"></button>')
+            .attr('data-message-id', messageId)
+            .prop('disabled', isBusy)
+            .attr('title', t`Retry prompt planning for this message`)
+            .html(`<i class="fa-solid fa-arrows-rotate"></i> ${t`Retry`}`));
+    }
+
     if (rebuildMediaIndex !== null) {
         row.append($('<button type="button" class="cia-msg-btn cia-rebuild-from-image"></button>')
             .attr('data-message-id', messageId)
@@ -3416,9 +4808,14 @@ async function generateComfyImage(candidate, signal = null) {
     }
 
     let workflow = await workflowResponse.json();
-    const finalPrompt = combinePrefixes(sd.prompt_prefix, candidate.prompt, '{prompt}');
-    const negativePrompt = candidate.negative_prompt
-        ? combinePrefixes(sd.negative_prompt, candidate.negative_prompt)
+    const activeCandidate = { ...candidate };
+    const filtered = applyPromptRules(activeCandidate.prompt, activeCandidate.negative_prompt);
+    activeCandidate.prompt = filtered.prompt;
+    activeCandidate.negative_prompt = filtered.negative_prompt;
+
+    const finalPrompt = combinePrefixes(sd.prompt_prefix, activeCandidate.prompt, '{prompt}');
+    const negativePrompt = activeCandidate.negative_prompt
+        ? combinePrefixes(sd.negative_prompt, activeCandidate.negative_prompt)
         : String(sd.negative_prompt || '');
     const seed = Number(sd.seed) >= 0 ? Number(sd.seed) : Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
     const denoise = sd.denoising_strength === undefined ? 1.0 : Number(sd.denoising_strength);
@@ -4177,14 +5574,25 @@ async function showPromptInspector() {
     }
 
     const settings = ensureSettings();
+    settings.systemPrompt = getActiveSystemPrompt(settings);
     const systemPrompt = substituteParams(settings.systemPrompt);
-    const userPrompt = substituteParams(buildUserPrompt(messageId));
+
+    let ragTags = '';
+    if (settings.promptMode === 'rag' && settings.enableDictionary && settings.activeDictionaryProfile) {
+        const lastMessage = chat[messageId];
+        const text = String(getMessageText(lastMessage) || '').trim();
+        if (text) {
+            ragTags = await queryDictionaryRag(text);
+        }
+    }
+
+    const userPrompt = substituteParams(buildUserPrompt(messageId, { ragTags }));
     const jsonSchema = JSON.stringify(stripSchemaConstraints(getEffectiveJsonSchema(settings)), null, 2);
 
     const popupContent = $(applyLocale(`
         <div class="cia-prompt-inspector-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
             <div style="font-size: 0.95em; opacity: 0.85; margin-bottom: 4px;" data-i18n="Prompt Inspector Intro">This is the final raw prompt that would be sent to the planning LLM if generated at this moment.</div>
-            
+
             <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
                 <span style="font-weight: 600;" data-i18n="System Prompt">System Prompt</span>
                 <div class="cia-textarea-container" style="position: relative;">
@@ -4194,7 +5602,7 @@ async function showPromptInspector() {
                     </button>
                 </div>
             </div>
-            
+
             <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
                 <span style="font-weight: 600;" data-i18n="User Prompt & Context">User Prompt & Context</span>
                 <div class="cia-textarea-container" style="position: relative;">
@@ -4204,7 +5612,7 @@ async function showPromptInspector() {
                     </button>
                 </div>
             </div>
-            
+
             <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
                 <span style="font-weight: 600;" data-i18n="JSON Schema Constraint">JSON Schema Constraint</span>
                 <div class="cia-textarea-container" style="position: relative;">
@@ -5079,6 +6487,11 @@ function registerDomHandlers() {
         await editCandidate(messageId);
     });
 
+    $(document).on('click', '.cia-retry-candidate', async function () {
+        const messageId = Number($(this).attr('data-message-id'));
+        await requestImageCandidate(messageId, { force: true, manual: true });
+    });
+
     $(document).on('click', '.cia-cancel-planner', function () {
         const messageId = Number($(this).attr('data-message-id'));
         cancelPlannerRequest(messageId);
@@ -5184,3 +6597,259 @@ jQuery(async () => {
     await createSettingsUi();
     renderAllMessageControls();
 });
+
+
+function normalizeEmbeddingUrl(url) {
+    const cleanUrl = String(url || '').trim().replace(/\/+$/, '');
+    if (!cleanUrl) {
+        return '';
+    }
+    return cleanUrl.endsWith('/embeddings') ? cleanUrl : `${cleanUrl}/embeddings`;
+}
+
+async function getCustomEmbeddingVectors(texts, signal = undefined) {
+    const settings = ensureSettings();
+    const input = Array.isArray(texts) ? texts.map(x => String(x || '')) : [String(texts || '')];
+    const model = String(settings.embeddingModel || '').trim();
+    const url = normalizeEmbeddingUrl(settings.embeddingApiUrl);
+    const apiKey = String(settings.embeddingApiKey || '').trim();
+
+    if (!model) {
+        throw new Error(t`Please enter the Model name before testing.`);
+    }
+    if (!url) {
+        throw new Error(t`Please enter the API URL before testing.`);
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        signal,
+        body: JSON.stringify({ input, model }),
+    });
+
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || errData?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawVectors = Array.isArray(data?.data)
+        ? data.data
+            .slice()
+            .sort((a, b) => Number(a?.index ?? 0) - Number(b?.index ?? 0))
+            .map(x => x?.embedding)
+        : data?.embeddings;
+    const vectors = Array.isArray(rawVectors) ? rawVectors : [];
+
+    if (vectors.length !== input.length || vectors.some(x => !Array.isArray(x) || !x.length)) {
+        throw new Error(t`Embedding response did not contain valid vectors.`);
+    }
+
+    return vectors;
+}
+
+function getWebLlmVectorRequestBody(args = {}) {
+    const settings = ensureSettings();
+    return {
+        source: 'webllm',
+        model: String(settings.embeddingModel || '').trim(),
+        ...args,
+    };
+}
+
+function getEmbeddingsMap(texts, vectors) {
+    const embeddings = {};
+    for (let i = 0; i < texts.length; i++) {
+        embeddings[texts[i]] = vectors[i];
+    }
+    return embeddings;
+}
+
+async function testEmbeddingConnection() {
+    const toast = toastr.info(t`Testing connection, please wait...`, 'Context Image Assistant', { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
+
+    try {
+        await getCustomEmbeddingVectors(['test']);
+        toastr.success(t`Connection tested successfully. Embedding source is working!`, 'Context Image Assistant');
+    } catch (err) {
+        toastr.error(t`Failed to test connection: ${err.message}`, 'Context Image Assistant');
+    } finally {
+        toastr.clear(toast);
+    }
+}
+
+async function importDictionary(name, file) {
+    const toast = toastr.info(t`Reading file...`, t`Importing Dictionary "${name}"`, { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
+    try {
+        const text = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsText(file);
+        });
+
+        let items = [];
+        const ext = file.name.split('.').pop().toLowerCase();
+
+        if (ext === 'json') {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+                for (const item of parsed) {
+                    const tag = String(item.tag || item.name || '').trim();
+                    const desc = String(item.desc || item.description || item.val || '').trim();
+                    if (tag) items.push({ tag, desc });
+                }
+            } else if (parsed && typeof parsed === 'object') {
+                for (const [tag, descVal] of Object.entries(parsed)) {
+                    const cleanTag = String(tag).trim();
+                    const cleanDesc = String(descVal).trim();
+                    if (cleanTag) items.push({ tag: cleanTag, desc: cleanDesc });
+                }
+            }
+        } else {
+            const lines = text.split(/\r?\n/);
+            for (const line of lines) {
+                const cleanLine = line.trim();
+                if (!cleanLine) continue;
+                let tag = '';
+                let desc = '';
+                if (cleanLine.includes('|')) {
+                    const parts = cleanLine.split('|');
+                    tag = parts[0].trim();
+                    desc = parts.slice(1).join('|').trim();
+                } else if (cleanLine.includes(',')) {
+                    const parts = cleanLine.split(',');
+                    tag = parts[0].trim();
+                    desc = parts.slice(1).join(',').trim();
+                } else {
+                    tag = cleanLine;
+                    desc = cleanLine;
+                }
+                if (tag) items.push({ tag, desc });
+            }
+        }
+
+        if (items.length === 0) {
+            throw new Error(t`No valid tags found in the file.`);
+        }
+
+        const collectionId = `cia_dict_${getStringHash(name)}`;
+        const batchSize = 50;
+
+        toastr.clear(toast);
+        const progressToast = toastr.info(`0/${items.length} (0%) tags processed`, `Importing Dictionary "${name}"`, { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
+
+        for (let i = 0; i < items.length; i += batchSize) {
+            const batchItems = items.slice(i, i + batchSize).map((item, index) => {
+                const textValue = `${item.tag}|${item.desc}`;
+                return {
+                    hash: getStringHash(textValue),
+                    text: textValue,
+                    index: i + index
+                };
+            });
+
+            const embeddingTexts = batchItems.map(item => item.text);
+            const vectors = await getCustomEmbeddingVectors(embeddingTexts);
+            const response = await fetch('/api/vector/insert', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({
+                    ...getWebLlmVectorRequestBody({
+                        embeddings: getEmbeddingsMap(embeddingTexts, vectors),
+                    }),
+                    collectionId: collectionId,
+                    items: batchItems,
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData?.error?.message || `Failed to insert batch: HTTP ${response.status}`);
+            }
+
+            progressToast.find('.toast-message').text(`${Math.min(i + batchSize, items.length)}/${items.length} (${Math.round((Math.min(i + batchSize, items.length) / items.length) * 100)}%) tags processed`);
+        }
+
+        toastr.clear(progressToast);
+
+        const settings = ensureSettings();
+        if (!settings.dictionaries) settings.dictionaries = {};
+        settings.dictionaries[name] = {
+            name: name,
+            collectionId: collectionId,
+            itemsCount: items.length,
+            createdAt: new Date().toISOString()
+        };
+        settings.activeDictionaryProfile = name;
+        settings.enableDictionary = true;
+
+        saveSettingsDebounced();
+        updateStatusUi();
+        toastr.success(t`Dictionary "${name}" imported successfully.`, 'Context Image Assistant');
+
+    } catch (err) {
+        toastr.clear(toast);
+        toastr.error(t`Failed to import dictionary: ${err.message}`, 'Context Image Assistant');
+    }
+}
+
+async function queryDictionaryRag(searchText) {
+    const settings = ensureSettings();
+    if (!settings.enableDictionary || !settings.activeDictionaryProfile) {
+        return '';
+    }
+    const dict = settings.dictionaries[settings.activeDictionaryProfile];
+    if (!dict) {
+        return '';
+    }
+
+    try {
+        const topK = settings.dictionaryRecallCount || 5;
+        const threshold = settings.dictionaryThreshold !== undefined ? settings.dictionaryThreshold : 0.20;
+        const vectors = await getCustomEmbeddingVectors([searchText]);
+
+        const response = await fetch('/api/vector/query', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                ...getWebLlmVectorRequestBody({
+                    embeddings: getEmbeddingsMap([searchText], vectors),
+                }),
+                collectionId: dict.collectionId,
+                searchText: searchText,
+                topK: topK,
+                threshold: threshold
+            })
+        });
+
+        if (!response.ok) {
+            console.warn(`CIA Dictionary: Query failed with HTTP ${response.status}`);
+            return '';
+        }
+
+        const result = await response.json();
+        const metadata = result.metadata || [];
+        const tags = [];
+        for (const item of metadata) {
+            if (item && item.text) {
+                const parts = item.text.split('|');
+                const tag = parts[0].trim();
+                if (tag && !tags.includes(tag)) {
+                    tags.push(tag);
+                }
+            }
+        }
+
+        return tags.join(', ');
+    } catch (err) {
+        console.error('CIA Dictionary: Failed to query RAG', err);
+        return '';
+    }
+}

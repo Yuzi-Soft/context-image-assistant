@@ -11,7 +11,7 @@
 
 .cia-settings .cia-tab-row {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
     gap: 4px;
     background: rgba(0, 0, 0, 0.2);
     padding: 3px;
@@ -1598,4 +1598,277 @@
     .cia-ref-selector-group select {
         max-width: none;
     }
+}
+
+/* ==========================================================================
+   Prompt Tag Filtering Rules Styles
+   ========================================================================== */
+.popup:has(.cia-rules-wrapper) {
+    width: 90vw !important;
+    max-width: 850px !important;
+}
+
+.cia-rules-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: var(--text-color, #fff);
+    font-family: var(--main-font, system-ui, -apple-system, sans-serif);
+}
+
+.cia-rules-wrapper button,
+.cia-rules-wrapper .menu_button {
+    white-space: nowrap !important;
+}
+
+.cia-rules-toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.cia-rules-profile-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.cia-rules-profile-group span {
+    font-size: 0.88em;
+    font-weight: 600;
+    opacity: 0.8;
+    white-space: nowrap;
+}
+
+.cia-rules-profile-group select {
+    flex-grow: 1;
+    max-width: 320px;
+    height: 32px !important;
+    padding: 0 8px !important;
+}
+
+.cia-rules-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cia-rules-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 480px; /* Comfortable height to fit ~10 items without scrollbar squishing */
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.cia-rule-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+    transition: background 0.18s, border-color 0.18s;
+}
+
+.cia-rule-card:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.cia-rule-card.disabled {
+    opacity: 0.5;
+}
+
+.cia-rule-drag-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cia-rule-drag-btn {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-color) !important;
+    opacity: 0.4;
+    cursor: pointer;
+    padding: 1px !important;
+    font-size: 0.75em !important;
+    min-height: auto !important;
+    width: auto !important;
+    line-height: 1 !important;
+}
+
+.cia-rule-drag-btn:hover {
+    opacity: 1;
+}
+
+.cia-rule-card-checkbox {
+    cursor: pointer;
+    margin: 0 !important;
+}
+
+.cia-rule-info {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.cia-rule-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    flex-wrap: wrap;
+}
+
+.cia-rule-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.88em;
+}
+
+.cia-rule-badge.delete {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.cia-rule-badge.add {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.cia-rule-target {
+    opacity: 0.65;
+    font-weight: 500;
+}
+
+.cia-rule-trigger-cond {
+    color: var(--SmartThemeQuoteColor, #78beff);
+    font-family: var(--monospace-font, monospace);
+    font-size: 0.88em;
+    word-break: break-all;
+}
+
+.cia-rule-tags-display {
+    font-size: 0.9em;
+    opacity: 0.9;
+    word-break: break-all;
+}
+
+.cia-rule-actions-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.cia-rule-actions-cell .cia-icon-btn {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    font-size: 0.85em !important;
+    border-radius: 5px !important;
+}
+
+.cia-rule-form-container {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cia-rule-form-title {
+    font-weight: bold;
+    font-size: 0.95em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 4px;
+}
+
+.cia-rule-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.cia-rule-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.cia-rule-form-field.full-width {
+    grid-column: 1 / -1;
+}
+
+.cia-rule-form-field label {
+    font-size: 0.8em;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.cia-rule-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+/* Premium dashed full-width add button */
+.cia-rules-add-row {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.cia-rules-add-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    height: 38px !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.15) !important;
+    border-radius: 6px !important;
+    color: var(--text-color, #fff) !important;
+    font-size: 0.9em !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: all 0.25s ease !important;
+    box-sizing: border-box !important;
+    outline: none !important;
+}
+
+.cia-rules-add-btn:hover {
+    background: rgba(120, 190, 255, 0.08) !important;
+    border-color: var(--SmartThemeQuoteColor, #78beff) !important;
+    color: var(--SmartThemeQuoteColor, #78beff) !important;
+    box-shadow: 0 0 10px rgba(120, 190, 255, 0.12) !important;
+}
+
+.cia-rules-add-btn i {
+    font-size: 1.1em !important;
 }
