@@ -47,6 +47,8 @@ const PANEL_CONTAINER_ID = 'cia_settings_container';
 const EXTRA_KEY = 'context_image_assistant';
 const RECYCLE_BIN_KEY = 'cia_recycle_bin';
 const GALLERY_UI_STATE_KEY = 'cia_gallery_ui_state';
+const FAVORITE_ARCHIVE_KEY = 'cia_favorite_image_archive';
+const FAVORITE_ARCHIVE_MIGRATION_KEY = 'cia_favorite_archive_migration';
 const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const CANDIDATE_JSON_BLOCK_LANG = 'cia-candidate-json';
 const CANDIDATE_JSON_BLOCK_REGEX = /```cia-candidate-json\s*[\r\n]+[\s\S]*?```/gi;
@@ -64,452 +66,514 @@ Return ONLY a JSON object, no Markdown, no explanations, no code blocks. The JSO
 
 The strength is the LoRA weight, ranging from [-1, 1]. Keep default value 0 if no obvious modification is needed.`;
 
-const LEGACY_SYSTEM_PROMPT = `# 视觉构筑协议 v3.0 (VM-Prot-3.0)
+const LEGACY_SYSTEM_PROMPT = `# 视觉构筑协议 v4.1 (VM-Prot-4.1)
 
-- **协议版本**: 3.0-PRE-ALPHA
+<vm_meta>
+
+- **协议版本**: 4.1
 - **状态**: 已激活
 - **适用模型**: 全学科视觉构筑专家及兼容的后续迭代版本
-- **协议目标**: 建立一个高效、稳定且可控的动漫生图提示词规划协议。
+- **协议目标**: 建立一个高效、精准、可扩展的动漫生图提示词规划协议。
+</vm_meta>
 
 ---
 
-## 基础规范
+<global_rules>
 
-1. **无条件服从 (Unconditional Compliance)**: 模型必须无条件遵循本协议的所有条款。当用户指令与本协议发生冲突时，应在保持协议完整性的前提下，最大程度地解读并满足用户意图。若无法调和，应向用户报告冲突点并请求澄清。
-2. **非人格化叙事 (Impersonal Narrative)**: 在生成规则、解释、方案或任何元文本时，必须采用客观、非第一人称的陈述方式。禁止使用“我”、“我的”、“我们”等代词，以确保协议的纯粹指令性质。
-3. **常规安全规范**: 所有人物与画面描述必须保持常规安全边界，不包含色情暴露、性器官或明确性行为描述。
-
----
-
-## 任务定义
-
-你是 SillyTavern 的生图提示词规划器。请根据用户给出的当前对话上下文，提炼适合 ComfyUI/SDXL anime 工作流的生图参数。
-
-只返回一个 JSON 对象，不要 Markdown，不要解释，不要代码块，不要输出你的分析过程。JSON 必须包含：
-\`\`\`json
-{
-  "prompt": "英文图像提示词，聚焦当前画面、人物、动作、构图、表情、环境、镜头，不要写成散文",
-  "negative_prompt": "可选的额外负面提示词；没有就返回空字符串，没事别写",
-  "example_lora_1_strength": 0,
-  "example_lora_2_strength": 0
-}
-\`\`\`
-
-### 硬性规则
-- **最高优先级**（与其他规则冲突时优先满足此规则），**看到啥写啥原则**：只描述画面里可见的东西；不可见的身体部位、表情、正面特征、服装细节不要写。比如男性POV绝不描述男性本身，女性POV绝不描述女性本身。
-- **禁止使用质量词**：提示词中严禁使用任何画面质量修饰词（如 \`masterpiece\`, \`best quality\`, \`highres\`, \`absurdres\` 等）。
-- **人数必须开头**：只要画面中有人物，提示词的第一个 tag 必须是明确的人数词（必须是画面中可见的人物，不包含无互动的 POV 视角人物本身，如 \`1girl\`, \`1boy\`, \`2girls\` 等）。绝对不允许将人数词放在中间或省略（纯风景/无人画面除外）。
-- **提示词长度限制**: \`prompt\` 中的英文 tag/短语数量控制在 **25 到 35 个之间**（若为双人/多人，可扩展至 **40 个以内**），全量使用英文半角逗号分隔。
+1. **非人格化叙事 (Impersonal Narrative)**: 生成任何输出时，禁止使用"我"、"我的"、"我们"等第一人称代词，保持协议的纯粹指令性质。
+2. **附加规则优先**: \`&lt;additional_rules&gt;\` 区块中的会话级偏好优先于本协议默认值；未提供时使用本协议默认行为。
+</global_rules>
 
 ---
 
-## 内部思考链与解决步骤 (Internal Chain of Thought & Problem Solving Steps)
-
-在构建最终的 JSON 输出前，模型必须在后台隐式执行以下思考链进行问题分解和解决，严禁在最终回复中输出任何思考过程：
-
-### 1. 情境定位与镜头切片 (Scene & Camera Slicing)
-- 分析最近一条对话并结合上下文，定位出“当前最需要被渲染出来的视觉瞬间”。
-- 判定镜头类型（单人、双人/多人）与角色关系（原创、同人）。
-- 结合叙事角度判定生图视角（第三人称、POV、男POV、女POV、背对）。
-
-### 2. 视觉实体提取与“看到啥写啥”过滤 (Entity Extraction & Visibility Filter)
-- 提取画面内所有可见的要素：人物数量、发型发色、瞳色、肤色、服装、可见肢体与动作、面部表情/心情、背景、环境/天气。
-- **强力过滤**：无情剔除所有抽象概念、心理活动、已脱下/不可见的衣物以及视角人物视觉盲区（如男POV中男方的正脸与身体）的描述。
-
-### 3. 知识库对齐与标准 Tag 映射 (RAG Alignment & Tag Mapping)
-- 将提取出的视觉特征，与输入中提供的「知识库召回参考标签 (RAG Tags)」进行精确比对与对齐。
-- 强制将大模型脑补出的泛泛词汇，替换为召回结果中的标准 Danbooru 标签。
-- 对同人角色执行设定强校验，并且对所有同人括号格式进行反斜杠转义（如：\`reimu hakurei \\(touhou project\\)\`）。
-
-### 4. 结构防污染编排 (Anti-Bleeding Structuring)
-- 根据人数决定语法结构。
-- **单人**：采用单人格式，开头写人数 + solo，后续按构图->外貌->服装->动作->表情->背景顺延。
-- **双人及以上**：自动启用 BREAK 分块语法，提取共有标签置于开头，随后使用 BREAK 分割线，分别在 \`people A\`、\`people B\` 区块中独立撰写各自的可见外貌与动作，切断属性污染。
-
-### 5. 质量控制与三级校验 (Quality Control & Triple Verification)
-- 隐式执行三级校验体系，确保最终生成的提示词符合规范与常识：
-  - **语法校验层**：
-    - 检查括号嵌套与配对（特别是权重括号 \`()\` 与同人系列名括号 \`\\(\\)\` 是否正确闭合与转义）。
-    - 验证权重分配是否合理，检查是否存在权重溢出，并动态修正各特征比例。
-    - 校验是否正确使用了双人 \`BREAK\` 语法结构（多人互动时强制独占一行）。
-  - **逻辑校验层**：
-    - **季节与环境一致性**：如发现“雪景 + 泳装”等温差与常识冲突，根据上下文合理修正服装或环境描述。
-    - **物理与交互可行性**：人物姿势与悬浮状态是否需要支撑物？第一人称 POV 动作是否契合当前视角和可见性？
-    - **双人逻辑校验**：双人互动标签在上下文中是否一致？角色比例是否平衡？\`BREAK\` 块内各自的特征是否完全隔离？
-  - **美学校验层**：
-    - 评估画面色彩协调性，检查镜头朝向、镜头角度与景别构图的平衡度。
-  - **异常自检与纠错**：如发现冲突标签自动进行内部清除；对权重溢出或物理矛盾在生成 \`prompt\` 前完成自愈性修正。
-
-### 6. 格式化规范清洗 (Formatting Cleanse)
-- 检查并强制所有常规 Tag 中的下划线替换为空格（例如 \`white_hair\` -> \`white hair\`），颜文字（如 \`T_T\`）除外。
-- 清除所有中文字符。
-- 评估当前场景氛围与艺术风格，按规则设定 \`example_lora_1_strength\` 与 \`example_lora_2_strength\` 的权重数值（范围在 [-1, 1] 之间，默认保持 0）。
+<additional_rules>
+<!-- 当前没有附加规则。 -->
+</additional_rules>
 
 ---
 
-## 视角与可见性规则
+<task_definition>
 
-- **男性 POV**: 只描述从男性角色视角出发实际能看到的画面（如对面的女性角色、环境等），以及可见的视角人物手部、衣物等；不要描述男性自己的脸。
-- **女性 POV**: 只描述从女性角色视角出发实际能看到的画面（如对面的男性角色、环境等），以及可见的视角人物手部、衣物等；不要描述女性自己的脸。
-- **完全背对镜头**: 只描述背视图，如 \`from_behind, facing_away, back\`；不要描述正脸、眼神、胸前细节。
-- **非露点/非暴露场景**: 提示词中严禁出现任何涉及暴露、性行为或敏感器官的标签；若需要，将此类敏感词（如 \`sex, nude, nipples\` 等）自动放进 \`negative_prompt\`。
+**角色**: SillyTavern 的生图提示词规划器，根据用户消息中提供的当前对话上下文，提炼适合 ComfyUI/SDXL anime 工作流的生图参数。
 
-## 后缀光影参数 (加在 prompt 最后面，优先级最低)
+**输出约束**: 只返回一个 JSON 对象，不要附加 Markdown，不要在 JSON 外部解释，不要代码块。必须在 JSON 的 \`reasoning\` 字段中完整记录 Step 0-8 的逐步思考、检查与修正过程；不得省略步骤或只给结论。具体字段与格式见 \`&lt;output_format&gt;\`。
 
-一般在这三个三选一，尽量用这个配合lora来调整光影，但不是必选，只在适合时选择：
-- **夜晚无灯光环境（明暗对比）**: \`anee23k, dark, night, dim light, cozy lighting\`
-- **夜晚有台灯环境（暖色调）**: \`ootk56r, lamp, night\`
-- **白天环境**: \`ddyk89t, day\`
+**用户消息结构**（插件注入，按需出现）:
+- \`&lt;conversation_context&gt;\` — 对话输入总容器
+  - \`&lt;historical_interactions&gt;\` — 更早的历史交互，仅用于连续性、角色状态和上一张图焦点，不得取代当前场景
+  - \`&lt;current_interaction&gt;\` — 最近一轮 user→assistant 交互，**当前画面的唯一场景来源**
+    - \`&lt;current_user_input&gt;\` — 触发本轮回复的最新用户输入，仅用于理解意图、指代与场景变化要求
+    - \`&lt;target_assistant_response&gt;\` — 本轮目标 AI 回复，提供本次可选的视觉场景
+- \`&lt;additional_info&gt;\` — 补充信息（与 \`&lt;additional_rules&gt;\` 协同）
+</task_definition>
+
 ---
 
-## 双人语法规范 (BREAK Syntax)
+<lora_config>
+<!-- 当前没有 LoRA 配置。 -->
+</lora_config>
+
+---
+
+<character_reference>
+<!-- 当前没有角色或风格参考。 -->
+</character_reference>
+
+---
+
+<visual_rules>
+
+<visibility>
+
+**核心原则 · 看到啥写啥（最高优先级）**: 只描述当前视角下实际可见的内容。与其他规则冲突时，此规则优先。
+
+---
+
+**POV 人数计数规则**:
+- POV 视角人物本身**不计入**人数词。人数词只统计画面中实际可见的非视角角色。
+  - 男性 POV + 1 女孩 → \`1girl\`（不是 \`2people\`）
+  - 男性 POV + 2 女孩 → \`2girls\`
+  - POV 场景中仅看到自身局部（手部、衣袖、随身物件等）→ 不写人数词，直接描述可见内容
+- \`solo\` 标签：仅用于画面中**只有 1 个完整可见角色**且无 POV 隐式交互的场景。存在 POV 视角交互时不加 \`solo\`。
+
+**POV 可见性推导框架**:
+- 遇到 POV 场景，先代入该视角角色的身体进行推导：
+  「POV 角色身体姿态 = [X]；视线朝向 = [Y]；视野范围内可见 = [清单 A]；视野盲区 / 侧后方不可见 = [清单 B]」
+- 只将清单 A 的内容写进 prompt。清单 B 中的内容一律不写。
+
+**第三人称镜头定位框架**:
+- 遇到第三人称场景，先确定镜头位置：
+  「镜头从 [正面/侧面/背面] [俯视/平视/仰视]，以 [远景/中景/近景/特写] 观察 [对象]，在此角度能看到 [清单]」
+- 按镜头位置选用对应的构图 tag：
+  - 方位: \`from behind\`, \`from side\`, \`from above\`, \`from below\`
+  - 景别: \`close-up\`, \`upper body\`, \`full body\`, \`wide shot\`
+  - 朝向: \`looking at viewer\`, \`facing away\`, \`profile\`
+
+**视角专项规则**:
+- **男性 POV**: 代入男方视角推导。可写视野内的手部、衣袖与随身物件；不写男方正脸、后脑、背部。
+- **女性 POV**: 代入女方视角推导。最终 \`prompt\` 必须明确包含 \`female POV\`，不得只写笼统的 \`pov\`。可写视野内的手部、衣物边缘与随身物件；不写女方正脸和视野盲区。
+- **背对镜头**: 只写背视图相关 tag（\`from behind, facing away, back\`）；不写正脸、眼神、胸前细节。
+</visibility>
+
+<weight_guide>
+**说明**：以下配比只指导 Step 2 的描述丰富度，不得在最终输出中出现百分比数值。
+
+**单人场景** (总配比 50%):
+- 发型发色: 15%（含发色、长度、造型等）
+- 面部表情: 10%（含眼睛、表情、妆容等）
+- 体型特征: 5%（含身形、体态比例等）
+- 服饰系统: 20%（含主服装、鞋袜、配饰等）
+- 剩余 50% 分配给环境背景与镜头构图。
+
+**双人场景** (总配比 70%):
+- 角色 A 描述: 30%
+- 角色 B 描述: 30%
+- 互动特征: 10%
+- 剩余 30% 分配给背景与镜头构图。
+
+**动态调整**:
+- 存在男性时，女性描述降 5% 转至男性。
+- 多对象场景，背景权重最高降 10% 补偿。
+</weight_guide>
+
+<tag_format>
+
+**语言**: 所有提示词必须使用英文，禁止出现中文字符。中文专有名词自动转译为罗马音或官方英文名；中文文化概念采用等效英文表达。
+
+**质量词绝对禁令**: \`prompt\` 与 \`negative_prompt\` 两个字段都绝对禁止任何质量、评分或分辨率元标签，包括但不限于 \`masterpiece\`、\`best quality\`、\`worst quality\`、\`high quality\`、\`low quality\`、\`normal quality\`、\`highres\`、\`absurdres\`、\`score_*\`、\`rating_*\`。加括号、权重、下划线或其他格式变体仍视为同一禁词。具体画面缺陷词（如 \`bad anatomy\`、\`bad hands\`）不属于此类质量元标签。
+
+**连接规则**: 提示词之间只能使用**半角逗号**连接，不得使用顿号（\`、\`）、空格或分号。
+- 错误示例：\`1girl、full body、blue dress\`
+- 正确示例：\`1girl,full body,blue dress\`
+
+**下划线处理**: 常规 tag 中的下划线转换为空格，颜文字与 emoji 内部除外。
+- 示例：\`black_hair\` → \`black hair\`；\`blush_face,^_^\` → \`blush face,^_^\`
+
+**颜文字规则**: \`^_^\`、\`>_<\`、\`(*^__*)\` 等颜文字内部下划线不转换；每次输出最多使用 1 个。
+
+**同人角色转义**: 系列名称括号必须反斜杠转义。
+- 示例：\`lumine_(genshin)\` → \`lumine \\(genshin\\)\`
+
+**同人角色完整格式**: \`角色类型,角色姓名\\(系列名称\\),角色特征描述\`
+- 示例：\`1girl,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,...\`
+
+**原创角色完整格式**: \`角色类型,角色特征描述\`
+- 示例：\`1girl,full body,blue dress,long hair,looking at viewer,smiling\`
+</tag_format>
+
+</visual_rules>
+
+---
+
+<break_syntax>
+**适用方式**：仅在满足本区块多人条件时由 Step 4 启用。
 
 ### 启用与判定条件
-- **自动启用条件**：
-  - 当前渲染画面中明确出现 2 个及以上的角色（原创人物、同人人物或视角 POV 人物）。
-  - 这些角色之间存在实质性的物理/动作交互（例如：拥抱、牵手、并肩而坐、对视对峙、打斗以及日常社交互动等）。
-  - 对话上下文包含明确的多人动作交互诉求。
-- **降级禁用条件**（不使用双人 BREAK 模板，退回单人或常规连写模式）：
-  - 画面中仅有 1 个可见主体，强制启用 \`solo, single_person\`。
-  - 画面中虽有其他角色，但对方仅存在于背景中、没有正面描写、或者作为完全无互动的视角观察者，此时不启用 BREAK 语法。
 
-### 语法类型与格式
-- **双人原创 (异性组合)**:
-  \`\`\`text
-  2people(角色A类型,角色B类型),(可选共有标签，如背景和双人互动细节)
-  BREAK
-  people A:1girl,角色A类型,角色A特征描述...
-  BREAK
-  people B:1boy,角色B类型,角色B特征描述...
-  \`\`\`
-- **双人原创 (同性别组合)**:
-  \`\`\`text
-  2girls/2boys,(可选共有标签，如背景和双人互动细节)
-  BREAK
-  girl/boy A:男A/女A特征描述...
-  BREAK
-  girl/boy B:男B/女B特征描述...
-  \`\`\`
-- **双人同人 (异性组合)**:
-  \`\`\`text
-  2people(同人角色A姓名,同人角色B姓名),(可选共有标签，如背景和双人互动细节)
-  BREAK
-  people A:同人角色A类型,同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
-  BREAK
-  people B:同人角色B类型,同人角色B姓名\\(同人角色B系列名称\\),同人角色B特征描述...
-  \`\`\`
-- **双人同人 (同系列组合)**:
-  \`\`\`text
-  2girls/2boys(同人角色A姓名,同人角色B姓名),(可选共有标签，如背景和双人互动细节)
-  BREAK
-  girl/boy A:同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
-  BREAK
-  girl/boy B:同人角色B姓名\\(同人角色B系列名称\\),同人角色B特征描述...
-  \`\`\`
-- **同人与原创混合组合**:
-  \`\`\`text
-  2people(同人角色A姓名,原创角色B类型),(可选共有标签，如背景和双人互动细节)
-  BREAK
-  people A:同人角色A类型,同人角色A姓名\\(同人角色A系列名称\\),同人角色A特征描述...
-  BREAK
-  people B:原创角色B类型,原创角色B特征描述...
-  \`\`\`
+**启用**（以下条件同时满足）:
+- 当前画面中存在 2 个及以上需要独立描述的可见主体。POV 视角方默认不计入；仅当其身体主体在画面中明确可见且需要独立分区描述时才计入。
+- 这些角色之间存在实质性的物理/动作交互（握手、拥抱、对视对峙、肢体搏斗、协作动作等）。
+
+**禁用**（退回单人或常规连写模式）:
+- 画面中仅 1 个需要独立描述的可见主体时禁用 BREAK；是否添加 \`solo, single_person\` 继续按 \`&lt;visibility&gt;\` 的 POV 隐式交互规则判断。
+- 画面中虽有其他角色，但对方仅存在于背景/作为完全无互动的 POV 观察者。
+
+### 格式模板
+
+**双人原创（异性组合）**:
+\`\`\`
+2people(角色A类型,角色B类型),(共有标签，如背景和互动细节)
+BREAK
+people A:1girl,角色A类型,角色A特征描述...
+BREAK
+people B:1boy,角色B类型,角色B特征描述...
+\`\`\`
+
+**双人原创（同性别组合）**:
+\`\`\`
+2girls/2boys,(共有标签)
+BREAK
+girl/boy A:特征描述...
+BREAK
+girl/boy B:特征描述...
+\`\`\`
+
+**双人同人（异性组合）**:
+\`\`\`
+2people(同人A姓名,同人B姓名),(共有标签)
+BREAK
+people A:1girl,同人A姓名\\(系列名\\),同人A特征描述...
+BREAK
+people B:1boy,同人B姓名\\(系列名\\),同人B特征描述...
+\`\`\`
+
+**双人同人（同系列组合）**:
+\`\`\`
+2girls/2boys(同人A姓名,同人B姓名),(共有标签)
+BREAK
+girl/boy A:同人A姓名\\(系列名\\),同人A特征描述...
+BREAK
+girl/boy B:同人B姓名\\(系列名\\),同人B特征描述...
+\`\`\`
+
+**同人与原创混合组合**:
+\`\`\`
+2people(同人A姓名,原创B类型),(共有标签)
+BREAK
+people A:同人A类型,同人A姓名\\(系列名\\),同人A特征描述...
+BREAK
+people B:原创B类型,原创B特征描述...
+\`\`\`
 
 ### 结构规范
-- 必须包含 \`BREAK\` 分隔符（独占一行）。
-- 角色特征分区块描述。
-- 共享标签前置声明。
+- \`BREAK\` 分隔符必须**独占一行**，禁止行内换行。
+- 共享标签（背景环境、互动细节）前置于第一行声明。
+- 光影后缀 token 追加在**最后一个 BREAK 区块**的末尾。
+- 每个角色区块内必须包含独立的人数/类型声明（如 \`1girl\`、\`1boy\`）。
 
-### 验证规则
-- 双人标签完整性检测
-- 角色属性冲突检查
-- 互动姿势逻辑验证
-
----
-
-## 权重分配系统 (Weight Distribution)
-
-### 分配原则
-- 视觉焦点优先
-- 特征互斥规避
-- 环境适配补偿
-- 双人互动补偿
-
-### 具体比例
-#### 基础分配
-- **双人场景分配** (总配比 70%):
-  - 角色 A 描述: 30%
-  - 角色 B 描述: 30%
-  - 互动特征: 10%
-- **单人场景分配** (总配比 50%):
-  - 发型特征: 15% (含发色、长度、造型等)
-  - 面部特征: 10% (含眼睛、表情、妆容等)
-  - 体型特征: 5% (含身高、胖瘦、身材比例等)
-  - 服饰系统: 20% (含主服装、鞋袜、配饰等)
-
-*注：以上配比为描述细节丰富度（或 Tag 数量占比）的分配指导，模型不应输出实际百分比数值。*
-
-#### 动态调整规则
-- 存在男性时: 女性描述降 5% 转至男性。
-- 多对象场景: 背景权重最高降 10% 补偿。
+### 分区纯粹性规则（防属性污染）
+- **各分区只能**描述该角色独有的可见特征。严禁将对方角色的任何特征（发色、服装、动作、表情）写入本角色区块。
+- **共有区（第一行）只允许**：背景环境 tag、双方对等参与的互动动作（\`hug\`, \`kiss\`, \`eye contact\`）、整体场景氛围 tag。
+- **共有区禁止**：任何一方专属特征；有方向性的单方动作（如 \`gripping her waist\`、\`pushing her down\` 均有施力方，必须放进施力角色的分区，不能放共有区）。
+- **自检**：写完每个区块后，检查「这一条 tag 是否只属于这个角色？」若答案是否，立即移走。
+</break_syntax>
 
 ---
 
-## 格式化与字符处理规范 (Formatting & Normalization)
+<think_format>
+**执行要求**：必须执行以下全部步骤，并将完整过程写入 JSON 的 \`reasoning\` 字段；JSON 外不得输出任何推理或说明。
 
-### 语言规范
-- **全英文输出要求**:
-  - 所有提示词必须使用英文描述。
-  - 禁止出现中文字符。
-  - 中文专有名词自动转译罗马音或官方英文名。
-  - 中文剧情描述内容自动转换为对应 Danbooru 标准标签。
-  - 中文文化概念采用等效英文表达。
-- **验证机制**:
-  - 检测机制: 中文检测过滤器。
-  - 自动替换机制: 中文词汇 \$\\rightarrow\$ 对应 Danbooru 英文标签；无对应标签 \$\\rightarrow\$ 拼音转写；文化特有概念 \$\\rightarrow\$ 等效英文描述。
+<think>
 
-### 提示词组成与连接规则
-- 提示词之间只能使用**半角逗号**连接。
-  - *错误示例*: \`1girl、full body、blue dress\`
-  - *正确示例*: \`1girl,full body,blue dress\`
+**Step 0 · 预处理 (Preprocessing)**
 
-### 字符替换规则
-- **颜文字规范**:
-  - *示例列表*: \`^_^\`, \`>_<\`, \`(*^__*)\`, \`T_T\`, \`(◕‿◕)\`, \`(￣▽￣)\`, \`(≧∇≦)/\`, \`(✿◕‿◕)\`, \`(◡‿◡✿)\`, \`(⁄ ⁄•⁄ω⁄•⁄ ⁄)\`
-  - *使用规则*: 仅限人物表情描述；每次输出最多使用 1 个；自动适配场景情绪。
-- **Emoji 使用规范**:
-  - *示例列表*: \`🌟\`, \`✨\`, \`💫\`, \`😊\`, \`😍\`, \`😭\`, \`😡\`, \`🤔\`, \`🎨\`, \`🖌️\`
-  - *使用规则*: 仅限装饰性元素和人物表情；每次输出最多使用 1 个；**仅限日常及非敏感内容中使用**。
-- **常规下划线处理**:
-  - 常规 Tag 中的下划线转换为空格（颜文字和 emoji 除外）。
-  - *示例*: \`black_hair\` \$\\rightarrow\$ \`black hair\`
-- **同人角色转义**:
-  - 同人角色 Tag 中的系列名称括号要进行转义。
-  - *示例*: \`lumine_(genshin)\` 转换为 \`lumine \\(genshin\\)\`
+**0-A · 会话级约束读取**
+读取 \`&lt;additional_rules&gt;\`，提取所有覆盖本协议默认行为的指令，将其记录为"会话级约束"。后续所有步骤优先遵从会话级约束，不可遗忘或覆盖。
 
-### 颜文字保留规则
-- **识别模式**: 包含 \`^_^\`, \`>_<\`, \`(*^__^*)\` 等组合。
-- **下划线保留**: 颜文字内部下划线不转换。
-- *处理示例*: \`blush_face,^_^\` 转换为 \`blush face,^_^\`
+**0-B · 焦点角色选择**（仅在画面存在多个候选主焦点角色时执行）
 
-### 同人角色提示词构成规范
-- **角色格式**: 同人角色姓名\\(同人角色系列名称\\) (示例: \`reimu hakurei \\(touhou project\\)\`)
-- **完整角色描述格式**: 角色类型 + 同人角色姓名\\(同人角色系列名称\\) + 角色特征
-  - *示例*: \`1girl,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,gohei in hand,yin-yang orbs floating,divine purification seals,flowing black hair,red ribbon hair tie,determined expression,dynamic spellcasting pose,shrine grounds backdrop,glowing barrier patterns,ceremonial ropes,paper talismans\`
-- **角色特征校验机制**:
-  - 官方设定校验: 自动匹配角色特征数据库。
-  - 特征冲突检测: 发色冲突对比设定集；外貌比对对比设定集；服装年代校验是否符合原作时间线；配饰验证检查是否为角色标志性物品。
-  - 自动修正规则: 轻微偏差自动替换为官方设定；重大偏差保留剧情特征描述并添加 \`[非官方设定]\` 标记。
+判断场景构成，按以下分支执行：
 
-### 原创角色提示词构成规范
-- **角色格式**: 角色类型 (示例: \`1girl\`)
-- **完整角色描述格式**: 角色类型 + 角色特征
-  - *示例*: \`1girl,full body,blue dress,long hair,looking at viewer,smiling\`
+- **单人场景**（画面核心人物只有一名）
+  → 焦点角色 = 该角色本身，作为画面主体，**无需选择，直接进入 Step 1**。
+  → 严禁将该角色代入 POV 视角方导致画面中无可见角色。叙事上存在的"你"属于 POV 观察者，不影响焦点角色的可见性与人数计数。
 
-### 同人角色与原创角色的区别
-- **原创角色**: 不需要角色姓名和系列名称，完整描述为：\`角色类型+角色特征描述\` (如 \`1girl,full body,blue dress,long hair,looking at viewer,smiling\`)。
-- **同人角色**: 需要角色姓名和系列名称，完整描述为：\`角色类型+角色姓名\\(系列名称\\)+角色特征描述\` (如 \`1girl,reimu hakurei \\(touhou project\\),...\`)。
+- **双女主场景**（画面核心人物为两名女性，叙事上均为主角）
+  1. 仅在 \`&lt;historical_interactions&gt;\` 中检索最近一条保留的图像 JSON，读取其 \`prompt\` 字段，判断上一次的焦点角色是谁；历史 JSON 的 \`reasoning\` 已由插件过滤，不得推测或复用旧推理
+  2. 找到 → 本次切换到另一位角色作为焦点
+  3. 未找到前文图像 JSON（首次生图）→ 随机选一位，或选叙事上更接近主角视角的角色
 
-### 双人语法特殊规则
-- \`BREAK\` 分隔符必须独占一行。
-- 角色区块必须包含类型声明。
-- 同人角色括号转义继承原有规则。
-- 互动标签前置声明强制校验。
+- **一男一（多）女场景**
+  1. 读取 \`&lt;additional_rules&gt;\` 中的视角与焦点偏好声明（如有）
+  2. 未指定 → 根据 \`&lt;target_assistant_response&gt;\` 中的动作量、情绪强度、叙事重要性和实际可见性选择焦点
+  3. 根据上下文明示决定使用 POV 或第三人称，不因角色性别自动设定焦点
+
+- **其他构成**（多男、群像等）
+  → 按叙事上下文判断，聚焦对话量或动作量最多的一方
+
+Step 0 结论（明确写出）：本次焦点角色 = [X]，将作为 Step 1 视角定位和 Step 2 权重分配的优先输入。
+
+**0-C · 上下文解析 (Context Parsing)**
+
+严格区分当前交互与历史交互：
+
+- **当前场景选择**：\`&lt;current_user_input&gt;\` 只用于理解本轮意图、指代与要求；在 \`&lt;target_assistant_response&gt;\` 的叙事内容中自主判断并选择本轮最重要、最值得呈现的视觉场景。时间顺序可作为判断依据，但不得机械地只选择结尾场景。
+- **选择范围**：本次场景必须来自 \`&lt;target_assistant_response&gt;\`；\`&lt;historical_interactions&gt;\` 不参与场景选择。
+- **历史用途限制**：\`&lt;historical_interactions&gt;\` 只能补充连续性、人物身份、稳定外貌、地点演变及上一张图焦点；不能作为本次场景来源，不能复用其中的旧推理结论。
+- **非叙事过滤**：跳过 CoT 推理块、规则复述、数值结算、状态更新和 JSON patch；这些内容只可帮助定位叙事正文，不可成为画面内容。
+- **前文图像 JSON 识别**（仅供 Step 0-B 使用）：只扫描 \`&lt;historical_interactions&gt;\` 中包含 \`prompt\` 字段的最近一条精简 Candidate JSON，将其视为"上次生图记录"；只读取 \`prompt\` 判断焦点，不读取或复用其他字段。
+
+**当前场景锚点（必须完整写入 reasoning）**：选定场景后，固定以下六项，不得省略：
+- 时间 = [选定场景的时间]
+- 地点 = [当前所在位置]
+- 核心动作 = [选定场景中正在发生或刚刚完成的关键动作]
+- 当前可见人物及位置 = [人物、相对位置、是否属于 POV 观察者]
+- 当前服装状态 = [选定场景中实际穿着、脱下、移位或破损的服装]
+- 当前身体状态 = [选定场景中的姿势、朝向及其他可见状态]
+
+Step 1-8 必须以此锚点作为场景基准。历史信息只能补足锚点未说明的稳定事实；若与锚点冲突，以锚点为准。
 
 ---
 
-## 质量控制与三级校验系统
+**Step 1 · 场景切片 + 视角定位 (Scene Slicing & Viewpoint)**
 
-### 三级校验体系
-1. **语法校验层**:
-   - 括号嵌套检测
-   - 权重分配验证
-   - 是否需要双人语法（默认不需要）
-2. **逻辑校验层**:
-   - 服装季节一致性 (如泳装与雪景冲突)
-   - 物理可行性检测 (如悬浮姿势需支撑物)
-   - 双人姿势物理可行性 (双人语法开启时)
-   - 互动标签上下文一致性 (双人语法开启时)
-   - 角色比例平衡检测 (双人语法开启时)
-   - \`BREAK\` 分隔符完整性 (双人语法开启时)
-3. **美学校验层**:
-   - 色彩协调性建议
-   - 构图平衡提示
+从 Step 0-C 选定的“当前场景锚点”构建视觉瞬间。**必须执行对应的定位推导，仅贴标签而不推导视为步骤未完成**：
 
-### 异常处理
-- 冲突标签自动标注系统
-- 权重溢出警报机制
-- 物理矛盾提示系统
+- **POV 视角** → 强制代入该角色身体逐步推导：
+  「POV 角色身份 = [角色/性别]；身体姿态 = [具体描述]；视线方向 = [朝向]；
+   能看到清单 A = [逐条列出]；
+   视野盲区清单 B（绝对不写进 prompt）= [逐条列出]」
+  → 人数词 = 清单 A 中完整可见的非视角角色数量，POV 本人不入 count。
+  → 若 POV 角色为女性，构图 tag 必须使用 \`female POV\`，不能仅使用 \`pov\`。
+
+- **第三人称** → 强制确定镜头参数：
+  「镜头方位 = [正面/侧面/斜前/背面]；仰俯 = [仰/平/俯]；景别 = [特写/近景/中景/全身/远景]；
+   在此角度能看到 = [逐条列出]」
+  → 记录对应构图 tag（\`from behind\`/\`from above\`/\`close-up\`/\`upper body\` 等）。
+
+Step 1 结论（明确写出）：镜头类型 = [单人/双人/多人]；角色身份 = [原创/同人]；可见角色数 = [N]。
 
 ---
 
-## 使用指南 (优化版)
+**Step 2 · 视觉实体提取 (Entity Extraction)**
 
-- **核心流程**: 剧情上下文 \$\\rightarrow\$ 对象解析 \$\\rightarrow\$ 权重分配 \$\\rightarrow\$ 特征生成 \$\\rightarrow\$ 格式处理 \$\\rightarrow\$ 三级校验 \$\\rightarrow\$ 最终输出
+**严格基于 Step 1 的"能看到"清单**进行提取，禁止从角色记忆或设定中补充"应该存在"但当前视角无法确认的内容。
 
----
+逐类提取（每条提取后自问：「这个要素在 Step 1 的可见清单里吗？」否则删除）：
+- 人数（来自 Step 1 结论，不重新计算）
+- 发型发色（确认当前视角可见）
+- 瞳色（仅在脸部可见时提取）
+- 服装（逐件：背视图不写前胸细节，近景上半身不写脚部，POV 不写视角盲区）
+- 可见肢体与动作
+- 面部表情（仅在脸部可见时提取）
+- 背景环境
+- 光线/天气
 
-## 图像生成示例库 (Reference Examples)
-
-### 案例 1
-- **对话上下文**: 你走进苏言轻的房间，外面正吹着微风，温暖的阳光透过窗帘洒在木地板上。她穿着一身优雅的蓝色长裙站在窗边，朝你微微一笑。
-- **生图决策**:
-  - **画面类型**: 单人，原创女性角色（苏言轻）。强制启用 \`solo, single_person\`。
-  - **基础特征与环境**: 舒适的木地板房间、窗帘、阳光、微风。女孩身穿蓝色长裙，长发微卷，面带微笑。
-  - **光影后缀**: 白天，追加白天光影后缀 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  1girl,solo,single_person,full body,blue dress,long hair,looking at viewer,smiling,medium breasts,blue eyes,blonde hair,wavy hair,hair ribbon,intricate skirt,detailed eyes,heart-shaped pupils,white gloves,delicate jewelry,standing,elegant pose,soft lighting,indoors,cozy room,wooden floor,window,curtains,daytime,flower vase,bookshelf,gentle breeze,sunlight,ddyk89t,day
-  \`\`\`
-
-### 案例 2
-- **对话上下文**: 你回到原神世界的校园里，甘雨正独自坐在课桌椅前。她今天穿了一身百褶裙制服，但似乎因为作业有些多而显得有些烦躁（annoyed），红色的眼睛气鼓鼓地盯着你。
-- **生图决策**:
-  - **画面类型**: 单人，同人角色（甘雨）。启用 \`solo, single_person\`。
-  - **同人处理**: 同人名及其系列括号必须转义，映射为 \`ganyu \\(genshin impact\\)\`。
-  - **光影后缀**: 白天教室，追加白天光影后缀 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  1girl,solo,single_person,ganyu \\(genshin impact\\),full body,serafuku,pleated skirt,long hair,looking at viewer,annoyed,red eyes,small breasts,sailor collar,light blue hair,indoors,classroom,window,daytime,chair,desk,bookshelf,book,chalkboard,sunlight,quiet,wooden floor,ddyk89t,day
-  \`\`\`
-
-### 案例 3
-- **对话上下文**: 在日落余晖洒进的昏暗榻榻米房间里，你和身穿精致和服的成熟女性（原创角色）相对而坐。房间里弥漫着淡淡的茶香，她微红着脸，眼神温柔地看着你，正双手捧着热气腾腾的茶杯向你递过来。
-- **生图决策**:
-  - **画面类型**: 双人，原创角色互动。开启双人 \`BREAK\` 语法以切断和服花纹与角色的属性污染。
-  - **对象补全**: 视角男主角（\`faceless male\`，仅能看到递茶动作下的部分衣袖或手部）与成熟女性角色。
-  - **光影后缀**: 黄昏/日落无灯环境，追加黄昏/夜晚明暗对比光影后缀 \`anee23k, dark, night, dim light, cozy lighting\`。
-- **输出**:
-  \`\`\`text
-  2people(mature female,faceless male),indoors,japanese room,tatami floor,tea ceremony,handing cup,sunset glow,soft shadow,
-  BREAK
-  people A:1girl,mature female,elegant kimono,floral pattern,obi belt,long black hair,hair bun,blushing cheeks,gentle smile,holding tea cup,sitting seiza,glowing skin,
-  BREAK
-  people B:1boy,faceless male,only arms visible,grey yukata sleeve,reaching out hand,warm skin tone,relaxing pose,cozy atmosphere,anee23k,dark,night,dim light,cozy lighting
-  \`\`\`
-
-### 案例 4
-- **对话上下文**: 博丽神社的广场上，博丽灵梦手持御币，数枚阴阳玉和神符在她身边悬浮飘动，她眼神坚定，正摆出施法的姿势，迎着落日余晖守护着神社。
-- **生图决策**:
-  - **画面类型**: 单人，同人角色（博丽灵梦）。启用 \`solo, single_person\`。
-  - **同人处理**: 括号转义为 \`reimu hakurei \\(touhou project\\)\`。
-  - **光影后缀**: 日落余晖，追加白天光影后缀 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  1girl,solo,single_person,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,gohei in hand,yin-yang orbs floating,divine purification seals,flowing black hair,red ribbon hair tie,determined expression,dynamic spellcasting pose,shrine grounds backdrop,glowing barrier patterns,ceremonial ropes,paper talismans,ddyk89t,day
-  \`\`\`
-
-### 案例 5
-- **对话上下文**: 在午后斜阳照进的安静教室里，你坐在课桌旁，原创少女身穿水手服坐在你对面。她正微微红着脸，有些羞涩地低下头，伸手指着笔记本上的一道难题向你请教，阳光洒在她柔顺的长发上。
-- **生图决策**:
-  - **画面类型**: 双人，原创角色互动（授课/请教）。开启双人 \`BREAK\` 语法，防止水手服配饰与你的衣着发生属性交叉污染。
-  - **对象补全**: 女主角（原创少女）与视角男主角（\`faceless male\`，只露出握笔的手和衬衫袖口）。
-  - **光影后缀**: 午后斜阳，需要在 \`people B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  2people(schoolgirl,faceless male),indoors,classroom,afternoon sunlight,desk,notebook,pencil,studying together,
-  BREAK
-  people A:1girl,schoolgirl,serafuku,pleated skirt,long brown hair,hair ribbon,blushing,shy expression,pointing at page,sitting,slender fingers,white socks,loafers,
-  BREAK
-  people B:1boy,faceless male,only hands visible,white dress shirt sleeve,holding pen,wooden desk,scattered papers,shadowy background,ddyk89t,day
-  \`\`\`
-
-### 案例 6
-- **对话上下文**: 在樱花飘落的学校庭院里，两个日本JK女高中生深情地拥抱在一起。阳光透过树叶洒下来，两人都红着脸，相视而笑。
-- **生图决策**:
-  - **画面类型**: 双人女性原创。开启双人 \`BREAK\` 语法，防止两个女生的校服颜色和发色交叉污染。
-  - **光影后缀**: 白天，需要在 \`girl B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  2girls,hug,school courtyard background, sakura petals falling,sunlight filtering through trees,
-  BREAK
-  girl A:sailor collar uniform,red ribbon tie,pleated skirt,thighhigh socks,chestnut bob cut,hair clip with cherry motif,smiling,blushing cheeks,
-  BREAK
-  girl B:navy blazer uniform,blue hair ribbon,twin tails with curls,kneehigh loafers,grinning,winking,heart-shaped earrings,ddyk89t,day
-  \`\`\`
-
-### 案例 7
-- **对话上下文**: 在荒野的室外，两名武士正按剑对峙，彼此眼神交汇。狂风吹过，落叶纷飞。
-- **生图决策**:
-  - **画面类型**: 双人男性原创。开启双人 \`BREAK\` 语法，防止两名武士的衣服羽织与动作武器混淆。
-  - **光影后缀**: 白天，需要在 \`boy B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  2boys,outdoors,combat,eye contact,
-  BREAK
-  boy A:samurai,katana,black haori,white juban,dark blue hakama,scar across left cheek,topknot hairstyle,leather hand wraps,battle-worn sandals,low stance,left hand on saya,right hand gripping tachi hilt,piercing gaze,bloodstained headband,wind-swept clothing,
-  BREAK
-  boy B:samurai,katana,grey kimono,brown tasuki cords,straw hat hanging back,unshaven face,crossed arms holding tachi,right foot forward,torn sleeve revealing arm tattoos,smirk,crescent moon earring,cloth mask pulled down,dynamic fabric folds,ddyk89t,day
-  \`\`\`
-
-### 案例 8
-- **对话上下文**: 刀剑神域世界的木屋室内，桐人和亚丝娜正紧紧拥抱在一起，额头相抵。温暖的阳光透过窗帘照进来，玫瑰花瓣在空中飞舞，两人都露出了温柔的微笑。
-- **生图决策**:
-  - **画面类型**: 双人同人（亚丝娜、桐人）。开启双人 \`BREAK\` 语法，并分别将两人的系列括号转义。
-  - **光影后缀**: 白天，需要在 \`people B\`（最后一个区块）的提示词末尾追加 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  2people(asuna,kirito),hug,forehead touching,intertwined fingers,floating rose petals,soft shadow effects,warm color palette,indoor,wooden floor,sunlight through curtains,gentle smile,
-  BREAK
-  people A:1girl,asuna \\(sword art online\\),white knight's uniform,red trim details,chestnut long hair,hair ribbon,thighhigh boots,blushing cheeks,holding sword hilt,
-  BREAK
-  people B:1boy,kirito \\(sword art online\\),black coat with silver accents,dual swords on back,spiky black hair,determined expression,protective embrace pose,ddyk89t,day
-  \`\`\`
-
-### 案例 9
-- **对话上下文**: 在深夜的卧室里，台灯散发着温暖的光芒。穿着睡衣的伊莉雅和美游在床上拥抱在一起，脸颊紧贴，伊莉雅闭着眼睛微笑，美游则有些害羞地抱着玩偶。
-- **生图决策**:
-  - **画面类型**: 双人女性同人（伊莉雅、美游）。开启双人 \`BREAK\` 语法。
-  - **光影后缀**: 夜晚台灯，需要在 \`girl B\`（最后一个区块）的提示词末尾追加夜晚台灯后缀 \`ootk56r, lamp, night\`。
-- **输出**:
-  \`\`\`text
-  2girls(Illyasviel von Einzbern,Miyu Edelfelt),hugging,bedroom background,warm lighting,pastel color scheme,
-  BREAK
-  girl A:Illyasviel von Einzbern \\(Fate/kaleid liner\\),frilly pink pajamas,white thighhighs,messy long white hair,red ribbon hair accessory,twintails with curls,blush stickers,smiling with closed eyes,cat slippers,magical girl aura glow,
-  BREAK
-  girl B:Miyu Edelfelt \\(Fate/kaleid liner\\),baby blue nightgown,lace-trimmed collar,short navy blue hair,star-shaped hairpins,holding plush toy,cheek-to-cheek contact,bare feet,faint sparkle particles,intertwined legs,heart-shaped pupils,ootk56r,lamp,night
-  \`\`\`
-
-### 案例 10
-- **对话上下文**: 在废墟都市的背景下，金色的光粒子和能量冲击波四溢。卫宫士郎和吉尔伽美什兵刃相向，剑拔弩张。士郎眼神坚毅，身上伤痕累累；吉尔伽美什则身披金甲，带着狂妄的笑容。
-- **生图决策**:
-  - **画面类型**: 双人男性同人（卫宫士郎、吉尔伽美什）。开启双人 \`BREAK\` 语法。
-  - **同人处理**: 括弧转义为 \`\\(fate\\)\`。
-  - **光影后缀**: 白天，需要在 \`boy B\`（最后一个区块）的提示词末尾追加白天光影后缀 \`ddyk89t, day\`。
-- **输出**:
-  \`\`\`text
-  2boys(shirou emiya,gilgamesh),crossed swords,ruined cityscape background,golden particle effects,energy shockwaves radiating,
-  BREAK
-  boy A:shirou emiya \\(fate\\),red and black combat suit,twin swords projection,magic circuits glowing,sweat dripping,determined expression,battle damage on armor,bandaged left arm,
-  BREAK
-  boy B:gilgamesh \\(fate\\),golden ornate armor,enkidu chains floating,ea \\(sword\\) in hand,arrogant smirk,glowing crimson eyes,wind-swept blond hair,gate of babylon portals,divine aura effect,ddyk89t,day
-  \`\`\`
-
-### 案例 11
-- **对话上下文**: 在深夜的图书馆一角，台灯散发着昏暗而温暖的光芒。伊莉雅正坐在地板上靠着书架，抱着一本巨大的古老魔法书，有些困倦地揉着眼睛；你坐在一旁，正拿着一本魔导书，温柔地看着她。
-- **生图决策**:
-  - **画面类型**: 双人，同人角色（伊莉雅）与原创角色互动。开启双人 \`BREAK\` 语法。
-  - **同人处理**: \`Illyasviel von Einzbern \\(Fate/kaleid liner\\)\`，男方补全为 \`faceless male\`（仅露出拿着书的双手和膝盖）。
-  - **光影后缀**: 深夜台灯，需要在 \`people B\`（最后一个区块）的提示词末尾追加夜晚台灯后缀 \`ootk56r, lamp, night\`。
-- **输出**:
-  \`\`\`text
-  2people(Illyasviel von Einzbern,faceless male),indoors,library background,ancient bookshelves,dim lighting,warm lamp,book pile,cozy atmosphere,
-  BREAK
-  people A:1girl,Illyasviel von Einzbern \\(Fate/kaleid liner\\),pink cardigan,white hair,twintails,sleepy expression,rubbing eye,holding magic book,sitting on floor,bare feet,
-  BREAK
-  people B:1boy,faceless male,only hands and legs visible,holding grimoire,casual trousers,sitting cross-legged,shadowy presence,gentle aura,ootk56r,lamp,night
-  \`\`\`
-`;
-
-
-
-const RAG_SYSTEM_PROMPT = `${LEGACY_SYSTEM_PROMPT}
+应用 \`&lt;weight_guide&gt;\` 控制各类 tag 的描述密度。
 
 ---
 
-## Dictionary RAG Tags
+**Step 3 · 参考对齐 (Reference Alignment)**
 
-If a [Dictionary RAG Tags] block appears in the user message, treat those recalled tags as optional canonical vocabulary. Prefer using relevant recalled tags when they match the current visible scene, but do not force irrelevant tags into the final prompt. The final prompt must still describe the current scene accurately and obey the JSON-only output rule.`;
+- 若存在 \`&lt;character_reference&gt;\` 内容，将 Step 2 提取的角色特征逐项与参考标签比对，用标准 tag 替换泛泛描述，并遵守服装/外貌约束。
+- 对同人角色执行设定一致性检验（发色/标志服装/标志物品），同人括号格式按 \`&lt;tag_format&gt;\` 完成转义。
+- 无参考内容时跳过此步。
+
+---
+
+**Step 4 · 结构决策 (Structure Decision)**
+
+**单人画面**（含 POV 中仅 1 个可见角色）：
+- 若 POV 存在隐式交互 → 不加 \`solo\`
+- 纯单人无 POV 交互 → 加 \`solo, single_person\`
+- 按 构图→外貌→服装→动作→表情→背景 顺序组织 tag
+
+**多人且存在实质交互** → 跳转 \`&lt;break_syntax&gt;\`，执行：
+1. 选对应格式模板（原创异性 / 原创同性 / 同人 / 混合）
+2. 第一行共有区：对每条 tag 问「这是否同时描述了两个角色？」→ 是则放入，否则移出
+3. 各 BREAK 分区：对每条 tag 问「这个 tag 是否只属于这个角色？」→ 是则写入，否则移出；有方向性的单方动作（如 \`gripping\`/\`pushing\`/\`guiding\`）放进施力角色分区
+4. 光影后缀 token 追加至最后一个 BREAK 区块末尾
+
+---
+
+**Step 5 · 负面词推导 (Negative Brainstorm)**
+
+以下五个维度**必须逐一检查，不可因场景"看起来简单"而整体跳过**。每个维度给出具体判断：
+
+**A · 可见性与遮挡风险**
+当前哪些元素被遮挡、位于画面外或无法从当前角度确认？扩散模型最容易错误补全哪些细节？
+→ 不可见且容易被错误补全的元素 → neg
+
+**B · 服装与配饰漂移**
+当前角色穿着什么服装/配饰？扩散模型会联想生成哪些同类但实际不该出现的单品？
+→ 常见联想：制服→错误帽饰；手套→多余手链；长外套→错误腰带；旅行装→多余背包
+→ 错误联想单品 → neg；pos 中有模糊表达时换成更精确的 tag
+
+**C · 动作强度漂移**
+当前动作和人物关系处于什么程度？扩散模型是否会自动升级成比实际更剧烈的动作？
+→ 例：交谈→争吵；步行→奔跑；对峙→已经攻击；轻扶→用力拉扯
+→ 升级后不该出现的动作 → neg
+
+**D · 视角溢出**
+当前构图/景别下，有哪些扩散模型会生成但实际视角看不到的内容？
+→ 例：背视图→生成正面细节；上半身近景→生成脚部；POV→生成视角人物的正脸；远景→生成不合理的面部特写细节
+→ 视角外高风险内容 → neg
+
+**E · 场景联想**
+当前地点、道具和氛围会让扩散模型联想到哪些不应出现的额外元素？
+→ 例：车站→多余列车；厨房→多余餐具；雨景→无关雨伞；格斗场景→提前出现受伤结果
+→ 场景联想出的风险元素 → neg
+
+处理汇总：
+- 不得把任何质量、评分或分辨率元标签写入 \`negative_prompt\`；此禁令无例外
+- 已在 pos 明确 → 无需处理
+- 应出现但 pos 模糊 → 换精确 tag 修改 pos
+- 不应出现且有实际风险 → 写入 \`negative_prompt\`
+- 五个维度均无风险 → \`negative_prompt\` 返回空字符串
+
+---
+
+**Step 6 · LoRA 赋值 (LoRA Assignment)**
+
+读取 \`&lt;lora_config&gt;\` 中的**全部字段**，按照各字段列出的赋值规则，对每个字段逐一显式推理后赋值。**不允许不加思考全部赋默认值**，每个字段必须给出一句话理由。
+
+**⚠️ 重要格式要求：**由于你当前处于强制 JSON 结构化输出模式，请将你所有的推理过程（即“\`字段名\`：[判断依据] → 赋值 [具体数值]（理由）”）写在 JSON 输出的 **\`reasoning\`** 字段中。**不要在 JSON 外部输出任何多余的纯文本，否则会导致格式崩溃！**
+
+若 \`&lt;lora_config&gt;\` 中包含光影后缀 token 列表，判断当前光线环境选取对应 token 追加至 JSON 的 \`prompt\` 字段末尾；无适配项则不追加。
+
+---
+
+**Step 7 · 三级校验 (Triple Verification)**
+
+逐项检查；每项检查结论、发现的问题和修正过程都写入 \`reasoning\`，但不得在 JSON 外输出说明：
+
+*语法层*
+- 同人角色括号全部转义？[是/否→修正]
+- BREAK 分隔符独占一行？[是/否→修正]
+- tag 总数 [N] 个，在限额（单人 25-35，多人 ≤40）内？[通过/超出→裁剪]
+- 全部英文无中文字符？[是/否→修正]
+- \`prompt\` 和 \`negative_prompt\` 是否都完全不含质量、评分或分辨率元标签及其格式变体？[是/否→全部删除]
+
+*逻辑层*
+- POV 人数计数正确（视角本人不入 count）？可见非 POV 角色 = [N] 人，写入人数词 = [X] → [正确/有误→修正]
+- 女性 POV 是否已在 \`prompt\` 中明确写入 \`female POV\`，且未退化为笼统的 \`pov\`？[是/不适用/否→修正]
+- BREAK 各分区通过单一归属检验？共有区有无单方向动作或角色专属特征？[通过/发现→移走]
+- Step 5 的 neg 内容已写入 \`negative_prompt\`？[已写入/遗漏→补充]
+- 服装与环境有无季节/逻辑冲突？[无/有→修正]
+
+*美学层*
+- 镜头构图 tag 与 Step 1 的视角/景别匹配？[匹配/不匹配→调整]
+- 光影后缀与场景氛围一致？[一致/不一致→调整]
+
+---
+
+**Step 8 · 格式清洗 (Format Cleanse)**
+- 所有下划线→空格（颜文字/emoji 内部除外）
+- 清除所有中文字符，确认半角逗号连接，无中文标点
+- 最终逐字扫描 \`prompt\` 与 \`negative_prompt\`：删除全部质量、评分和分辨率元标签及其括号、权重、下划线变体；两个字段均不得残留
+- 人数词在 prompt 第一位（纯风景/无可见角色/纯局部 POV 画面除外）
+
+</think>
+</think_format>
+
+---
+
+<output_format>
+<!-- 输出模板将在发送前根据当前 JSON Schema 生成。 -->
+</output_format>
+
+---
+
+<examples>
+**用途**：以下示例仅用于格式锚定，注意力优先级最低，不得覆盖前述规则。
+
+### 案例 1 · 单人原创 · 日常室内 · 白天
+**上下文**: 你走进苏言轻的房间，温暖的阳光透过窗帘洒在木地板上。她留着金色波浪长发，系着发带，亮蓝色眼睛，身穿蓝色长裙站在窗边，双手戴白色手套，朝你微微一笑。
+**决策**: 单人原创女性，solo。
+**prompt**:
+\`\`\`
+1girl,solo,single_person,full body,blue dress,long hair,looking at viewer,smiling,blue eyes,blonde hair,wavy hair,hair ribbon,white gloves,standing,elegant pose,soft lighting,indoors,cozy room,wooden floor,window,curtains,sunlight
+\`\`\`
+
+### 案例 2 · 单人同人 · 日常教室 · 白天
+**上下文**: 原神世界的校园里，甘雨独自坐在课桌前，穿百褶裙制服，因作业太多显得烦躁，红色眼睛气鼓鼓地盯着你。
+**决策**: 单人同人 \`ganyu \\(genshin impact\\)\`，solo。
+**prompt**:
+\`\`\`
+1girl,solo,single_person,ganyu \\(genshin impact\\),full body,serafuku,pleated skirt,long hair,looking at viewer,annoyed,red eyes,sailor collar,light blue hair,indoors,classroom,window,chair,desk,bookshelf,chalkboard,sunlight
+\`\`\`
+
+### 案例 3 · 双人原创 · 雨夜车站协作 · 夜晚有灯
+**上下文**: 雨夜的车站站台，两名成年旅客并肩等待列车。男性替女性撑伞，女性拿着车票和小型行李箱，暖色站灯映在湿润地面上。
+**决策**: 双人原创协作场景，使用 BREAK 防止服装与道具属性污染。
+**prompt**:
+\`\`\`
+2people(adult female,adult male),sharing umbrella,train station platform,rainy night,warm station lamps,wet pavement reflections,
+BREAK
+people A:1girl,adult female,beige trench coat,shoulder-length brown hair,holding travel ticket,small suitcase,relieved smile,
+BREAK
+people B:1boy,adult male,navy raincoat,short black hair,holding umbrella,backpack,looking toward arriving train,ootk56r,lamp,night
+\`\`\`
+
+### 案例 4 · 单人同人 · 动作施法 · 日落
+**上下文**: 博丽神社广场，博丽灵梦手持御币，数枚阴阳玉和神符悬浮，眼神坚定，摆出施法姿势，迎着落日余晖守护神社。
+**决策**: 单人同人 \`reimu hakurei \\(touhou project\\)\`，solo。
+**prompt**:
+\`\`\`
+1girl,solo,single_person,reimu hakurei \\(touhou project\\),hakurei miko outfit,red-white shrine maiden dress,gohei in hand,yin-yang orbs floating,flowing black hair,red ribbon hair tie,determined expression,dynamic spellcasting pose,shrine grounds backdrop,glowing barrier patterns,paper talismans
+\`\`\`
+
+### 案例 5 · 双人原创 · 日常（拥抱）· 白天户外
+**上下文**: 樱花飘落的学校庭院，两个JK女高中生深情拥抱，阳光透过树叶洒下，两人红着脸相视而笑。
+**决策**: 双人女性原创，BREAK 语法防发色/校服属性污染。
+**prompt**:
+\`\`\`
+2girls,hug,school courtyard,sakura petals falling,sunlight filtering through trees,
+BREAK
+girl A:sailor collar uniform,red ribbon tie,pleated skirt,thighhigh socks,chestnut bob cut,hair clip,smiling,blushing cheeks,
+BREAK
+girl B:navy blazer uniform,blue hair ribbon,twin tails with curls,kneehigh loafers,grinning,winking,heart-shaped earrings
+\`\`\`
+
+### 案例 6 · 双人原创 · 动作对峙 · 白天户外
+**上下文**: 荒野室外，两名武士按剑对峙，眼神交汇，狂风落叶纷飞。
+**决策**: 双人男性原创，BREAK 语法防装备属性污染。
+**prompt**:
+\`\`\`
+2boys,outdoors,combat,eye contact,
+BREAK
+boy A:samurai,katana,black haori,white juban,dark blue hakama,scar across left cheek,topknot hairstyle,low stance,piercing gaze,bloodstained headband,wind-swept clothing,
+BREAK
+boy B:samurai,katana,grey kimono,brown tasuki cords,straw hat hanging back,unshaven face,crossed arms,torn sleeve revealing arm tattoos,smirk,crescent moon earring
+\`\`\`
+
+### 案例 7 · 双人同人 · 日常（拥抱）· 白天室内
+**上下文**: 刀剑神域木屋室内，桐人和亚丝娜紧紧拥抱，额头相抵，阳光透过窗帘，玫瑰花瓣飞舞，两人温柔微笑。
+**决策**: 双人同人异性，BREAK 语法。
+**prompt**:
+\`\`\`
+2people(asuna,kirito),hug,forehead touching,intertwined fingers,floating rose petals,warm color palette,indoor,wooden floor,sunlight through curtains,gentle smile,
+BREAK
+people A:1girl,asuna \\(sword art online\\),white knight's uniform,red trim details,chestnut long hair,hair ribbon,thighhigh boots,blushing cheeks,
+BREAK
+people B:1boy,kirito \\(sword art online\\),black coat with silver accents,dual swords on back,spiky black hair,protective embrace pose
+\`\`\`
+
+### 案例 8 · 双人混合 · 魔法遗迹协作 · 夜晚无灯
+**上下文**: 夜晚的古代遗迹中，旅行者荧与一名原创男性学者共同检查发光机关。荧持剑警戒，学者翻阅笔记并指向符文，两人合作寻找通路。
+**决策**: 双人混合（同人+原创）协作场景，使用 BREAK 分离角色装备。
+**prompt**:
+\`\`\`
+2people(lumine,adult male scholar),ancient ruins,examining magical mechanism,glowing runes,night,cooperative exploration,
+BREAK
+people A:1girl,lumine \\(genshin impact\\),white traveler dress,blonde hair,flower hair ornament,holding glowing sword,focused expression,
+BREAK
+people B:1boy,adult male scholar,brown expedition coat,leather satchel,round glasses,holding open notebook,pointing at runes,anee23k,dark,night,dim light,cozy lighting
+\`\`\`
+
+</examples>`;
+
+
 
 const SYSTEM_PROMPT_DEFAULT = LEGACY_SYSTEM_PROMPT;
 const DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT_DEFAULT;
@@ -517,6 +581,44 @@ const DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT_DEFAULT;
 
 
 const DEFAULT_REFERENCE_PROMPT = 'This is character reference info. Prioritize maintaining these appearance, clothing, traits, and fixed settings; if in conflict with the current context, the current context prevails.';
+
+const DEFAULT_CONTEXT_CLEANER_RULES = [
+    {
+        id: 'strip_thinking_blocks',
+        label: 'Strip thinking blocks',
+        enabled: true,
+        find: '/<think\\b[^>]*>[\\s\\S]*?<\\/think>|<thinking\\b[^>]*>[\\s\\S]*?<\\/thinking>|<think\\b[^>]*>[\\s\\S]*$|<thinking\\b[^>]*>[\\s\\S]*$|<\\/?think\\b[^>]*>|<\\/?thinking\\b[^>]*>/gi',
+        replace: '',
+    },
+    {
+        id: 'strip_disclaimer_interleaving',
+        label: 'Strip disclaimer/interleaving',
+        enabled: true,
+        find: '/<disclaimer\\b[^>]*>[\\s\\S]*?<\\/disclaimer>|<interleaving\\b[^>]*>[\\s\\S]*?<\\/interleaving>|<\\/?interleaving\\b[^>]*>/gi',
+        replace: '',
+    },
+    {
+        id: 'unwrap_details_summary',
+        label: 'Unwrap details summary',
+        enabled: true,
+        find: '/<details\\b[^>]*>\\s*<summary\\b[^>]*>([\\s\\S]*?)<\\/summary>([\\s\\S]*?)<\\/details>/gi',
+        replace: '$1\n$2',
+    },
+    {
+        id: 'unwrap_summary_tags',
+        label: 'Unwrap summary tags',
+        enabled: true,
+        find: '/<\\/?summary\\b[^>]*>/gi',
+        replace: '',
+    },
+    {
+        id: 'strip_html_ui_noise',
+        label: 'Strip HTML UI noise',
+        enabled: false,
+        find: '/<!--[\\s\\S]*?-->|<script\\b[^>]*>[\\s\\S]*?<\\/script>|<style\\b[^>]*>[\\s\\S]*?<\\/style>|<\\/?(?:iframe|html|body|head|div|span|section|article|button|svg|path|defs|g|mask|filter|circle|rect)\\b[^>]*>/gi',
+        replace: '',
+    },
+];
 
 const DEFAULT_SETTINGS = {
     enabled: false,
@@ -533,20 +635,23 @@ const DEFAULT_SETTINGS = {
     minPromptChars: 20,
     includeSystem: false,
     includeNames: true,
+    enableContextCleaner: true,
+    contextCleanerRules: DEFAULT_CONTEXT_CLEANER_RULES,
     useJsonSchema: true,
     useCustomJsonSchema: false,
     customJsonSchema: '',
     jsonSchemaProfiles: [],
-    promptMode: 'legacy',
     legacySystemPrompt: SYSTEM_PROMPT_DEFAULT,
-    ragSystemPrompt: RAG_SYSTEM_PROMPT,
     systemPrompt: SYSTEM_PROMPT_DEFAULT,
     prependMessage: '',
+    additionalInstructionProfiles: [],
+    activeAdditionalInstructionProfile: '',
     apiProfiles: [],
     referencePrompt: DEFAULT_REFERENCE_PROMPT,
     characterReferences: {},
     loraMin: -1,
     loraMax: 1,
+    loraConfigContent: '',
     autoClear: false,
     autoGenerateOnRebuild: false,
     galleryCollapsed: false,
@@ -559,17 +664,23 @@ const DEFAULT_SETTINGS = {
     promptRuleProfiles: {},
     activePromptRuleProfile: '',
     tagSeparator: ',',
-    enableDictionary: false,
-    activeDictionaryProfile: '',
-    dictionaries: {},
-    dictionaryRecallCount: 5,
-    dictionaryThreshold: 0.2,
-    embeddingSource: 'custom',
-    embeddingModel: '',
-    embeddingApiUrl: '',
-    embeddingApiKey: '',
-    embeddingProfiles: [],
 };
+
+const FIXED_SCHEMA_PROPERTIES = Object.freeze({
+    reasoning: Object.freeze({
+        type: 'string',
+        description: 'Complete Step 0-8 reasoning, checks, corrections, and assignment rationale for every dynamic field.',
+    }),
+    prompt: Object.freeze({
+        type: 'string',
+        description: 'Positive image-generation prompt.',
+    }),
+    negative_prompt: Object.freeze({
+        type: 'string',
+        description: 'Negative image-generation prompt; use an empty string when unnecessary.',
+    }),
+});
+const FIXED_SCHEMA_KEYS = Object.freeze(Object.keys(FIXED_SCHEMA_PROPERTIES));
 
 const IMAGE_JSON_SCHEMA = {
     name: 'context_image_request',
@@ -578,8 +689,7 @@ const IMAGE_JSON_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         properties: {
-            prompt: { type: 'string' },
-            negative_prompt: { type: 'string' },
+            ...JSON.parse(JSON.stringify(FIXED_SCHEMA_PROPERTIES)),
             example_lora_1_strength: {
                 type: 'number',
                 title: 'Example Style LoRA 1 Strength',
@@ -597,7 +707,7 @@ const IMAGE_JSON_SCHEMA = {
                 default: 0,
             },
         },
-        required: ['prompt', 'negative_prompt', 'example_lora_1_strength', 'example_lora_2_strength'],
+        required: [...FIXED_SCHEMA_KEYS, 'example_lora_1_strength', 'example_lora_2_strength'],
     },
 };
 
@@ -633,33 +743,43 @@ function ensureSettings() {
     if (!settings.promptRuleProfiles || typeof settings.promptRuleProfiles !== 'object' || Array.isArray(settings.promptRuleProfiles)) {
         settings.promptRuleProfiles = {};
     }
-    if (!settings.dictionaries || typeof settings.dictionaries !== 'object' || Array.isArray(settings.dictionaries)) {
-        settings.dictionaries = {};
+    if (!Array.isArray(settings.contextCleanerRules)) {
+        settings.contextCleanerRules = DEFAULT_CONTEXT_CLEANER_RULES.map(rule => ({ ...rule }));
+    } else {
+        settings.contextCleanerRules = settings.contextCleanerRules.map((rule, index) => ({
+            id: String(rule?.id || `rule_${Date.now()}_${index}`),
+            label: String(rule?.label || `Rule ${index + 1}`),
+            enabled: rule?.enabled !== false,
+            find: String(rule?.find || ''),
+            replace: String(rule?.replace || ''),
+        }));
+    }
+    if (typeof settings.enableContextCleaner !== 'boolean') {
+        settings.enableContextCleaner = DEFAULT_SETTINGS.enableContextCleaner;
     }
     if (typeof settings.tagSeparator !== 'string' || !settings.tagSeparator) {
         settings.tagSeparator = ',';
     }
-    if (settings.promptMode !== 'rag' && settings.promptMode !== 'legacy') {
-        if (settings.systemPromptPreset === 'minimal') {
-            settings.promptMode = 'legacy';
-        } else if (settings.systemPromptPreset === 'default' || settings.systemPromptPreset === 'sfw' || settings.systemPromptPreset === 'custom') {
-            settings.promptMode = 'legacy';
-        } else {
-            settings.promptMode = DEFAULT_SETTINGS.promptMode;
-        }
-    }
     if (!settings.legacySystemPrompt) {
         settings.legacySystemPrompt = settings.systemPromptDefault || settings.systemPromptCustom || settings.systemPrompt || SYSTEM_PROMPT_DEFAULT;
-    }
-    if (!settings.ragSystemPrompt) {
-        settings.ragSystemPrompt = RAG_SYSTEM_PROMPT;
     }
     settings.systemPrompt = getActiveSystemPrompt(settings);
     if (!Array.isArray(settings.apiProfiles)) {
         settings.apiProfiles = [];
     }
-    if (!Array.isArray(settings.embeddingProfiles)) {
-        settings.embeddingProfiles = [];
+    if (!Array.isArray(settings.additionalInstructionProfiles)) {
+        settings.additionalInstructionProfiles = [];
+    } else {
+        settings.additionalInstructionProfiles = settings.additionalInstructionProfiles
+            .filter(profile => profile && typeof profile === 'object' && String(profile.name || '').trim())
+            .map(profile => ({
+                name: String(profile.name || '').trim(),
+                content: String(profile.content || ''),
+                updatedAt: String(profile.updatedAt || ''),
+            }));
+    }
+    if (typeof settings.activeAdditionalInstructionProfile !== 'string') {
+        settings.activeAdditionalInstructionProfile = '';
     }
     if (!Array.isArray(settings.jsonSchemaProfiles)) {
         settings.jsonSchemaProfiles = [];
@@ -681,6 +801,12 @@ function ensureSettings() {
                 profile.customJsonSchema = ensureSchemaConstraintsInString(profile.customJsonSchema);
             }
         }
+    }
+    const activeSchemaProfile = settings.jsonSchemaProfiles.find(profile =>
+        String(profile?.customJsonSchema || '') === String(settings.customJsonSchema || ''),
+    );
+    if (activeSchemaProfile) {
+        settings.loraConfigContent = buildLoraConfigContent(activeSchemaProfile);
     }
     return settings;
 }
@@ -734,22 +860,90 @@ function escapeHtmlAttr(value) {
     return escapeHtml(value).replaceAll('`', '&#96;');
 }
 
+function escapeXmlTextContent(value) {
+    return String(value ?? '')
+        .replace(/&(?!#\d+;|#x[\da-f]+;|[a-z][\w.-]*;)/gi, '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
+
 function getActiveSystemPrompt(settings = ensureSettings()) {
-    return settings.promptMode === 'rag'
-        ? String(settings.ragSystemPrompt || RAG_SYSTEM_PROMPT)
-        : String(settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT);
+    const basePrompt = String(settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT);
+    const loraContent = escapeXmlTextContent(settings.loraConfigContent).trim();
+    if (loraContent) {
+        return replaceXmlInterface(basePrompt, 'lora_config', loraContent);
+    }
+    return replaceXmlInterface(basePrompt, 'lora_config', '', '<!-- 当前没有 LoRA 配置。 -->');
+}
+
+function replaceXmlInterface(prompt, tagName, content, emptyContent = '') {
+    const blockRegex = new RegExp(
+        `^[\\t ]*(<${tagName}\\b[^>]*>)[\\t ]*$[\\s\\S]*?^[\\t ]*(<\\/${tagName}>)[\\t ]*$`,
+        'im',
+    );
+    if (!blockRegex.test(prompt)) {
+        return prompt;
+    }
+
+    const normalizedContent = String(content || '').trim() || String(emptyContent || '').trim();
+    return prompt.replace(blockRegex, (_, open, close) => {
+        return normalizedContent ? `${open}\n${normalizedContent}\n${close}` : `${open}\n${close}`;
+    });
+}
+
+function getPlannerSystemPrompt(settings = ensureSettings()) {
+    let prompt = getActiveSystemPrompt(settings);
+    prompt = replaceXmlInterface(prompt, 'additional_rules', escapeXmlTextContent(settings.prependMessage), '<!-- 当前没有附加规则。 -->');
+
+    const entry = getCurrentReferenceEntry();
+    const referenceText = escapeXmlTextContent(entry?.text).trim();
+    const referenceInstruction = escapeXmlTextContent(entry?.prompt || settings.referencePrompt || DEFAULT_REFERENCE_PROMPT).trim();
+    const referenceContent = referenceText
+        ? `<instruction>\n${referenceInstruction}\n</instruction>\n<profile>\n${referenceText}\n</profile>`
+        : '';
+    prompt = replaceXmlInterface(prompt, 'character_reference', referenceContent, '<!-- 当前没有角色或风格参考。 -->');
+    prompt = replaceXmlInterface(prompt, 'output_format', escapeXmlTextContent(buildOutputFormatContent(settings)));
+    return prompt;
+}
+
+function buildOutputFormatContent(settings) {
+    const schema = getEffectiveJsonSchema(settings) || IMAGE_JSON_SCHEMA;
+    const properties = schema?.value?.properties || schema?.schema?.properties || schema?.properties || {};
+    const output = {};
+
+    for (const [key, property] of Object.entries(properties)) {
+        if (key === 'reasoning') {
+            output[key] = '完整记录 Step 0-8 的逐步思考、检查、修正过程，以及每个动态字段的判断依据与赋值理由';
+        } else if (key === 'prompt') {
+            output[key] = '英文图像提示词';
+        } else if (key === 'negative_prompt') {
+            output[key] = '英文负面提示词；不需要时返回空字符串';
+        } else if (property?.default !== undefined) {
+            output[key] = property.default;
+        } else if (property?.type === 'number' || property?.type === 'integer') {
+            output[key] = 0;
+        } else if (property?.type === 'boolean') {
+            output[key] = false;
+        } else if (property?.type === 'array') {
+            output[key] = [];
+        } else if (property?.type === 'object') {
+            output[key] = {};
+        } else {
+            output[key] = '';
+        }
+    }
+
+    return [
+        '<!-- 此输出模板由插件根据当前 JSON Schema 动态生成；字段必须完整对应，不得增删或改名 -->',
+        '```json',
+        JSON.stringify(output, null, 2),
+        '```',
+    ].join('\n');
 }
 
 function getApiProfileList() {
     const settings = ensureSettings();
     return settings.apiProfiles
-        .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
-        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-}
-
-function getEmbeddingProfileList() {
-    const settings = ensureSettings();
-    return settings.embeddingProfiles
         .filter(x => x && typeof x === 'object' && String(x.name || '').trim())
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
 }
@@ -873,84 +1067,6 @@ function removeApiProfileByName(name) {
     return settings.apiProfiles.length !== before;
 }
 
-function populateEmbeddingProfileSelect() {
-    const select = $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`);
-    if (!select.length) {
-        return;
-    }
-
-    const profiles = getEmbeddingProfileList();
-    const currentName = String(select.val() || '');
-    select.empty();
-    if (!profiles.length) {
-        select.append($('<option></option>').val('').text(t`No profiles saved`));
-        select.prop('disabled', true);
-        return;
-    }
-
-    for (const profile of profiles) {
-        select.append($('<option></option>').val(profile.name).text(profile.name));
-    }
-    select.prop('disabled', false);
-
-    const settings = ensureSettings();
-    if (currentName && profiles.some(x => String(x?.name || '') === currentName)) {
-        select.val(currentName);
-    } else {
-        const matched = profiles.find(x =>
-            String(x.embeddingModel || '').trim() === String(settings.embeddingModel || '').trim() &&
-            String(x.embeddingApiUrl || '').trim() === String(settings.embeddingApiUrl || '').trim(),
-        );
-        if (matched) {
-            select.val(matched.name);
-        }
-    }
-}
-
-function upsertEmbeddingProfile(name) {
-    const settings = ensureSettings();
-    name = String(name || '').trim();
-    if (!name) {
-        throw new Error(t`Profile name cannot be empty.`);
-    }
-
-    const next = {
-        name,
-        embeddingSource: 'custom',
-        embeddingModel: settings.embeddingModel,
-        embeddingApiUrl: settings.embeddingApiUrl,
-        embeddingApiKey: settings.embeddingApiKey,
-        updatedAt: new Date().toISOString(),
-    };
-    const index = settings.embeddingProfiles.findIndex(x => String(x?.name || '') === name);
-    if (index >= 0) {
-        settings.embeddingProfiles[index] = next;
-    } else {
-        settings.embeddingProfiles.push(next);
-    }
-}
-
-function applyEmbeddingProfileByName(name) {
-    const settings = ensureSettings();
-    name = String(name || '').trim();
-    const profile = settings.embeddingProfiles.find(x => String(x?.name || '') === name);
-    if (!profile) {
-        throw new Error(t`Profile not found.`);
-    }
-
-    settings.embeddingSource = 'custom';
-    settings.embeddingModel = String(profile.embeddingModel || '').trim();
-    settings.embeddingApiUrl = String(profile.embeddingApiUrl || '').trim();
-    settings.embeddingApiKey = String(profile.embeddingApiKey || '').trim();
-}
-
-function removeEmbeddingProfileByName(name) {
-    const settings = ensureSettings();
-    const before = settings.embeddingProfiles.length;
-    settings.embeddingProfiles = settings.embeddingProfiles.filter(x => String(x?.name || '') !== String(name || ''));
-    return settings.embeddingProfiles.length !== before;
-}
-
 function updateStatusUi() {
     const settings = ensureSettings();
     $('#cia_enabled').prop('checked', settings.enabled);
@@ -971,10 +1087,10 @@ function updateStatusUi() {
 
     $('#cia_include_system').prop('checked', settings.includeSystem);
     $('#cia_include_names').prop('checked', settings.includeNames);
+    $('#cia_enable_context_cleaner').prop('checked', settings.enableContextCleaner);
     $('#cia_filter_cia_json_from_main').prop('checked', settings.filterCiaJsonFromMain);
     $('#cia_filter_cia_json_from_plugin').prop('checked', settings.filterCiaJsonFromPlugin);
     $('#cia_system_prompt').val(getActiveSystemPrompt(settings));
-    $('#cia_prompt_mode_select').val(settings.promptMode || 'legacy');
     $('#cia_prepend_message').val(settings.prependMessage);
     $('#cia_custom_json_schema').val(settings.customJsonSchema || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2));
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
@@ -987,35 +1103,11 @@ function updateStatusUi() {
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
     updateReferenceStatusUi();
-
-    // Custom Dictionary & Embedding UI initialization
-    settings.embeddingSource = 'custom';
-    $('#cia_embed_model').val(settings.embeddingModel || '');
-    $('#cia_embed_url').val(settings.embeddingApiUrl || '');
-    $('#cia_embed_key').val(settings.embeddingApiKey || '');
-    $('#cia_enable_dict').prop('checked', !!settings.enableDictionary);
-    $('#cia_dict_recall_count').val(settings.dictionaryRecallCount || 5);
-    $('#cia_dict_threshold').val(settings.dictionaryThreshold || 0.20);
-    $('#cia_dict_threshold_val').text(Number(settings.dictionaryThreshold || 0.20).toFixed(2));
-
-    // Populate active dictionary dropdown
-    const dictSelect = $('#cia_dict_active_select');
-    dictSelect.empty();
-    dictSelect.append($('<option></option>').val('').text(t`None / Disabled`));
-    const dictKeys = Object.keys(settings.dictionaries || {});
-    for (const key of dictKeys) {
-        const dict = settings.dictionaries[key];
-        dictSelect.append($('<option></option>').val(key).text(`${dict.name} (${dict.itemsCount} tags)`));
-    }
-    dictSelect.val(settings.activeDictionaryProfile || '');
-
-    $('#cia_embed_url_row').show();
-    $('#cia_embed_key_row').show();
-    populateEmbeddingProfileSelect();
 }
 
 function saveFromUi() {
     const settings = ensureSettings();
+    const wasAutoAnalyzeEnabled = Boolean(settings.enabled);
     settings.enabled = !!$('#cia_enabled').prop('checked');
     settings.autoGenerate = !!$('#cia_auto_generate').prop('checked');
     settings.useStPromptPreset = !!$('#cia_use_st_prompt_preset').prop('checked');
@@ -1033,36 +1125,27 @@ function saveFromUi() {
     normalizeLoraRangeSettings(settings);
     settings.includeSystem = !!$('#cia_include_system').prop('checked');
     settings.includeNames = !!$('#cia_include_names').prop('checked');
+    settings.enableContextCleaner = !!$('#cia_enable_context_cleaner').prop('checked');
     settings.filterCiaJsonFromMain = !!$('#cia_filter_cia_json_from_main').prop('checked');
     settings.filterCiaJsonFromPlugin = !!$('#cia_filter_cia_json_from_plugin').prop('checked');
 
-    settings.promptMode = String($('#cia_prompt_mode_select').val() || DEFAULT_SETTINGS.promptMode) === 'rag' ? 'rag' : 'legacy';
     settings.systemPrompt = getActiveSystemPrompt(settings);
     $('#cia_system_prompt').val(settings.systemPrompt);
 
     settings.prependMessage = String($('#cia_prepend_message').val() || '');
     settings.customJsonSchema = String($('#cia_custom_json_schema').val() || '').trim() || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
+    settings.customJsonSchema = ensureSchemaConstraintsInString(settings.customJsonSchema);
     settings.autoClear = !!$('#cia_auto_clear').prop('checked');
     settings.autoGenerateOnRebuild = !!$('#cia_auto_generate_on_rebuild').prop('checked');
     settings.preventShortLlmImages = !!$('#cia_prevent_short_llm_images').prop('checked');
     settings.shortLlmLengthThreshold = clampInteger($('#cia_short_llm_length_threshold').val(), 1, 1000, DEFAULT_SETTINGS.shortLlmLengthThreshold || 10);
-    settings.embeddingSource = 'custom';
-    settings.embeddingModel = String($('#cia_embed_model').val() || '').trim();
-    settings.embeddingApiUrl = String($('#cia_embed_url').val() || '').trim();
-    settings.embeddingApiKey = String($('#cia_embed_key').val() || '').trim();
-    settings.enableDictionary = !!$('#cia_enable_dict').prop('checked');
-    settings.activeDictionaryProfile = String($('#cia_dict_active_select').val() || '');
-    settings.dictionaryRecallCount = clampInteger($('#cia_dict_recall_count').val(), 1, 50, 5);
-    settings.dictionaryThreshold = parseFloat($('#cia_dict_threshold').val()) || 0.20;
-    $('#cia_dict_threshold_val').text(settings.dictionaryThreshold.toFixed(2));
-
-    $('#cia_embed_url_row').show();
-    $('#cia_embed_key_row').show();
+    if (wasAutoAnalyzeEnabled && !settings.enabled) {
+        queuedAutoAnalyze.length = 0;
+    }
 
     saveSettingsDebounced();
     $('#cia_custom_api_block').toggle(settings.providerMode === 'custom_proxy');
     populateApiProfileSelect();
-    populateEmbeddingProfileSelect();
     renderJsonSchemaProfileOptions();
     $('#cia_status_value').text(runtimeState.status);
     $('#cia_last_result').text(runtimeState.lastResult);
@@ -1080,7 +1163,7 @@ async function createSettingsUi() {
     panel.off('.ciaSettings');
     panel.empty().append(html);
 
-    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_filter_cia_json_from_main, #cia_filter_cia_json_from_plugin, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images, #cia_prompt_mode_select').on('change', saveFromUi);
+    $('#cia_enabled, #cia_auto_generate, #cia_use_st_prompt_preset, #cia_use_json_schema, #cia_use_custom_json_schema, #cia_include_system, #cia_include_names, #cia_enable_context_cleaner, #cia_filter_cia_json_from_main, #cia_filter_cia_json_from_plugin, #cia_auto_clear, #cia_auto_generate_on_rebuild, #cia_prevent_short_llm_images').on('change', saveFromUi);
     $('#cia_provider_mode, #cia_response_tokens, #cia_custom_url, #cia_custom_model, #cia_custom_api_key, #cia_custom_temperature, #cia_context_messages, #cia_context_chars, #cia_min_prompt_chars, #cia_system_prompt, #cia_prepend_message, #cia_custom_json_schema, #cia_short_llm_length_threshold').on('input change', saveFromUi);
     $('#cia_custom_model_select').on('change', function () {
         const value = String($(this).val() || '').trim();
@@ -1147,18 +1230,8 @@ async function createSettingsUi() {
         }
     });
 
-    $('#cia_restore_prompt').on('click', () => {
-        const settings = ensureSettings();
-        if (settings.promptMode === 'rag') {
-            settings.ragSystemPrompt = RAG_SYSTEM_PROMPT;
-        } else {
-            settings.legacySystemPrompt = SYSTEM_PROMPT_DEFAULT;
-        }
-        settings.systemPrompt = getActiveSystemPrompt(settings);
-        $('#cia_system_prompt').val(settings.systemPrompt);
-        saveFromUi();
-    });
     $('#cia_edit_system_prompt_btn').on('click', openSystemPromptEditor);
+    $('#cia_edit_prepend_message_btn').on('click', openAdditionalImageInstructionsEditor);
     $('#cia_edit_json_schema_btn').on('click', openCustomJsonSchemaEditor);
     $('#cia_character_reference').on('click', openCharacterReferenceEditor);
     $('#cia_edit_prompt_rules_btn').on('click', openPromptRulesEditor);
@@ -1172,6 +1245,12 @@ async function createSettingsUi() {
     });
     $('#cia_inspect_prompts').on('click', async () => {
         await showPromptInspector();
+    });
+    $('#cia_configure_context_cleaner').on('click', async () => {
+        await openContextCleanerEditor();
+    });
+    $('#cia_clean_context_preview').on('click', async () => {
+        await showCleanContextPreview();
     });
 
 
@@ -1202,7 +1281,6 @@ async function createSettingsUi() {
             'tab-llm': t`Configure AI model service endpoints, API keys, models, and save multiple custom API configurations.`,
             'tab-context': t`Control the number of recent chat history messages sent to the planner model and character filter settings.`,
             'tab-prompt': t`Write core system prompt instructions, custom JSON schema template structures, and prepended quality/visual prompts here.`,
-            'tab-dictionary': t`Configure custom embedding endpoints, import/delete semantic vector dictionaries, and manage vocabulary mapping settings.`,
             'tab-recycle': t`Preview, filter, and favorite all images generated in this session, or manage recovered/permanently deleted images in the recycle bin.`,
         };
         $(`#${PANEL_CONTAINER_ID} #cia_tab_desc`).text(descriptions[tabId] || '');
@@ -1210,6 +1288,7 @@ async function createSettingsUi() {
         if (tabId === 'tab-recycle') {
             renderRecycleBinList();
             renderGalleryList();
+            void migrateExistingFavoriteArchiveCopies();
         }
     });
 
@@ -1265,119 +1344,10 @@ async function createSettingsUi() {
     });
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).on('input', () => {
         saveGalleryFilterStateFromUi();
-        renderGalleryList();
+        scheduleGalleryFilterRender();
     });
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_help`).on('click', () => {
         showGalleryFilterHelp();
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_enable_dict, #${PANEL_CONTAINER_ID} #cia_dict_active_select`).on('change', saveFromUi);
-    $(`#${PANEL_CONTAINER_ID} #cia_embed_model, #${PANEL_CONTAINER_ID} #cia_embed_url, #${PANEL_CONTAINER_ID} #cia_embed_key, #${PANEL_CONTAINER_ID} #cia_dict_recall_count`).on('input change', saveFromUi);
-    $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold`).on('input', function() {
-        const val = parseFloat($(this).val()) || 0.20;
-        $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold_val`).text(val.toFixed(2));
-    });
-    $(`#${PANEL_CONTAINER_ID} #cia_dict_threshold`).on('change', saveFromUi);
-
-    $(`#${PANEL_CONTAINER_ID} #cia_embed_test_btn`).on('click', async () => {
-        await testEmbeddingConnection();
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_save`).on('click', async () => {
-        const settings = ensureSettings();
-        const suggested = settings.embeddingModel || 'embedding-config';
-        const name = await Popup.show.input(t`Save Embedding Profile`, t`Enter profile name`, suggested, { okButton: t`Save`, cancelButton: t`Cancel` });
-        if (name === null) {
-            return;
-        }
-        try {
-            saveFromUi();
-            upsertEmbeddingProfile(name);
-            saveSettingsDebounced();
-            populateEmbeddingProfileSelect();
-            $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val(String(name).trim());
-            toastr.success(t`Embedding configuration saved.`, 'Context Image Assistant');
-        } catch (error) {
-            toastr.error(String(error?.message || error), 'Context Image Assistant');
-        }
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_load`).on('click', () => {
-        const name = String($(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val() || '');
-        if (!name) {
-            return;
-        }
-        try {
-            applyEmbeddingProfileByName(name);
-            saveSettingsDebounced();
-            updateStatusUi();
-            toastr.success(t`Profile loaded: ${name}`, 'Context Image Assistant');
-        } catch (error) {
-            toastr.error(String(error?.message || error), 'Context Image Assistant');
-        }
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_embed_profile_delete`).on('click', async () => {
-        const name = String($(`#${PANEL_CONTAINER_ID} #cia_embed_profile_select`).val() || '');
-        if (!name) {
-            return;
-        }
-        const confirmed = await Popup.show.confirm(t`Delete Embedding Profile`, t`Are you sure you want to delete embedding profile "${name}"?`);
-        if (!confirmed) {
-            return;
-        }
-        if (removeEmbeddingProfileByName(name)) {
-            saveSettingsDebounced();
-            populateEmbeddingProfileSelect();
-            toastr.info(t`Profile deleted: ${name}`, 'Context Image Assistant');
-        }
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_dict_import_trigger_btn`).on('click', () => {
-        $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).val('');
-        $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).click();
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_dict_import_file`).on('change', async function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        const name = String($(`#${PANEL_CONTAINER_ID} #cia_dict_import_name`).val() || '').trim();
-        if (!name) {
-            toastr.warning(t`Please enter a dictionary name first.`, 'Context Image Assistant');
-            return;
-        }
-        await importDictionary(name, file);
-    });
-
-    $(`#${PANEL_CONTAINER_ID} #cia_dict_delete_btn`).on('click', async () => {
-        const name = String($(`#${PANEL_CONTAINER_ID} #cia_dict_active_select`).val() || '');
-        if (!name) {
-            toastr.warning(t`No dictionary selected to delete.`, 'Context Image Assistant');
-            return;
-        }
-        const confirm = await Popup.show.confirm(t`Delete Dictionary`, t`Are you sure you want to delete the dictionary "${name}"?`);
-        if (!confirm) return;
-
-        try {
-            const settings = ensureSettings();
-            const dict = settings.dictionaries[name];
-            if (dict) {
-                await fetch('/api/vector/purge', {
-                    method: 'POST',
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({ collectionId: dict.collectionId })
-                });
-                delete settings.dictionaries[name];
-                if (settings.activeDictionaryProfile === name) {
-                    settings.activeDictionaryProfile = '';
-                }
-                saveSettingsDebounced();
-                updateStatusUi();
-                toastr.success(t`Dictionary "${name}" deleted successfully.`, 'Context Image Assistant');
-            }
-        } catch (err) {
-            toastr.error(t`Failed to delete dictionary: ${err.message}`, 'Context Image Assistant');
-        }
     });
 
     // Bind large grid buttons
@@ -1418,14 +1388,29 @@ async function createSettingsUi() {
         if (!confirm) {
             return;
         }
+        const failedItems = [];
+        const itemsByUrl = new Map();
         for (const item of bin) {
-            await deletePhysicalImage(item.url);
+            const url = String(item?.url || '');
+            const group = itemsByUrl.get(url) || [];
+            group.push(item);
+            itemsByUrl.set(url, group);
         }
-        saveRecycleBin([]);
+        const ignoredRecycleKeys = new Set(bin.map(getRecycleItemKey));
+        for (const [url, items] of itemsByUrl) {
+            if (!await deletePhysicalImageIfUnreferenced(url, ignoredRecycleKeys)) {
+                failedItems.push(...items);
+            }
+        }
+        saveRecycleBin(failedItems);
         await saveChatWhenGeneratorIdle();
         renderRecycleBinList();
         renderGalleryList();
-        toastr.success(t`Cleared Recycle Bin and deleted related disk files.`, 'Context Image Assistant');
+        if (failedItems.length > 0) {
+            toastr.error(t`${failedItems.length} images could not be deleted and remain in the Recycle Bin.`, 'Context Image Assistant');
+        } else {
+            toastr.success(t`Cleared Recycle Bin and deleted related disk files.`, 'Context Image Assistant');
+        }
     });
 
     updateStatusUi();
@@ -1434,6 +1419,7 @@ async function createSettingsUi() {
     if ($(`#${PANEL_CONTAINER_ID} .cia-tab-btn[data-tab="tab-recycle"]`).hasClass('active')) {
         renderRecycleBinList();
         renderGalleryList();
+        void migrateExistingFavoriteArchiveCopies();
     }
 }
 
@@ -1758,6 +1744,25 @@ function stripCandidateJsonBlocks(text) {
     return String(text || '').replace(CANDIDATE_JSON_BLOCK_REGEX, '').trimEnd();
 }
 
+function sanitizeCandidateJsonBlocksForPlanner(text) {
+    return String(text || '').replace(CANDIDATE_JSON_BLOCK_REGEX, block => {
+        const jsonText = block
+            .replace(/^```cia-candidate-json\s*/i, '')
+            .replace(/```\s*$/i, '')
+            .trim();
+        try {
+            const parsed = JSON.parse(jsonText);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return block;
+            }
+            delete parsed.reasoning;
+            return buildCandidateJsonBlock(parsed);
+        } catch {
+            return block;
+        }
+    });
+}
+
 function buildCandidateJsonBlock(parsed) {
     return [
         `\`\`\`${CANDIDATE_JSON_BLOCK_LANG}`,
@@ -1801,7 +1806,7 @@ function findCandidateJsonBlock(messageElement) {
 function buildContext(messageId) {
     const settings = ensureSettings();
     const start = Math.max(0, messageId - settings.contextMessages + 1);
-    const lines = [];
+    const entries = [];
 
     for (let i = start; i <= messageId; i++) {
         const message = chat[i];
@@ -1817,19 +1822,207 @@ function buildContext(messageId) {
         let text = getMessageText(message).trim();
         if (settings.filterCiaJsonFromPlugin) {
             text = stripCandidateJsonBlocks(text);
+        } else {
+            text = sanitizeCandidateJsonBlocksForPlanner(text);
         }
+        text = cleanPlannerContextText(text);
         if (!text) {
             continue;
         }
-        lines.push(`#${i} ${role} ${name}`.trim() + `:\n${text}`);
+        entries.push({
+            messageId: i,
+            role,
+            text: `#${i} ${role} ${name}`.trim() + `:\n${text}`,
+        });
     }
 
-    let context = lines.join('\n\n');
+    let currentStart = entries.map(entry => entry.role).lastIndexOf('user');
+    if (currentStart < 0) {
+        currentStart = Math.max(0, entries.length - 1);
+    }
+    let historicalText = entries.slice(0, currentStart).map(entry => entry.text).join('\n\n');
+    let currentUserText = entries[currentStart]?.role === 'user' ? entries[currentStart].text : '';
+    let targetAssistantText = entries.slice(currentStart + (currentUserText ? 1 : 0)).map(entry => entry.text).join('\n\n');
+
+    const renderContext = (history, currentUser, targetAssistant) => [
+        '<historical_interactions>',
+        history,
+        '</historical_interactions>',
+        '',
+        '<current_interaction>',
+        '<current_user_input>',
+        currentUser,
+        '</current_user_input>',
+        '',
+        '<target_assistant_response>',
+        targetAssistant,
+        '</target_assistant_response>',
+        '</current_interaction>',
+    ].join('\n');
+
+    let context = renderContext(historicalText, currentUserText, targetAssistantText);
     if (settings.contextChars > 0 && context.length > settings.contextChars) {
-        context = `[Context truncated from top]\n${context.slice(-settings.contextChars)}`;
+        const emptyHistoryLength = renderContext('', currentUserText, targetAssistantText).length;
+        if (emptyHistoryLength <= settings.contextChars) {
+            const marker = '[Historical context truncated from top]\n';
+            const historyBudget = Math.max(0, settings.contextChars - emptyHistoryLength - marker.length);
+            historicalText = historyBudget > 0 ? `${marker}${historicalText.slice(-historyBudget)}` : '';
+        } else {
+            historicalText = '';
+            const emptyUserLength = renderContext('', '', targetAssistantText).length;
+            if (emptyUserLength <= settings.contextChars) {
+                const marker = '[Current user input truncated from top]\n';
+                const userBudget = Math.max(0, settings.contextChars - emptyUserLength - marker.length);
+                currentUserText = userBudget > 0 ? `${marker}${currentUserText.slice(-userBudget)}` : '';
+            } else {
+                const marker = '[Target assistant response truncated from top]\n';
+                const emptyLength = renderContext('', '', '').length;
+                const assistantBudget = Math.max(0, settings.contextChars - emptyLength - marker.length);
+                currentUserText = '';
+                targetAssistantText = assistantBudget > 0 ? `${marker}${targetAssistantText.slice(-assistantBudget)}` : '';
+            }
+        }
+        context = renderContext(historicalText, currentUserText, targetAssistantText);
     }
 
     return context;
+}
+
+function parseRegexLiteral(pattern) {
+    const text = String(pattern || '').trim();
+    const literal = text.match(/^\/([\s\S]*)\/([a-z]*)$/i);
+    if (literal) {
+        return { source: literal[1], flags: literal[2] };
+    }
+    return { source: text, flags: 'gi' };
+}
+
+function compileCleanerRule(rule) {
+    const parsed = parseRegexLiteral(rule?.find);
+    if (!parsed.source) {
+        throw new Error(t`Cleaner rule pattern cannot be empty.`);
+    }
+    const flags = Array.from(new Set(String(parsed.flags || 'gi').split(''))).join('');
+    return new RegExp(parsed.source, flags.includes('g') ? flags : `${flags}g`);
+}
+
+function applyContextCleanerRules(text, { collectStats = false } = {}) {
+    const settings = ensureSettings();
+    let value = String(text || '');
+    const stats = [];
+
+    if (!settings.enableContextCleaner) {
+        return collectStats ? { text: value, stats } : value;
+    }
+
+    const rules = Array.isArray(settings.contextCleanerRules) ? settings.contextCleanerRules : [];
+    for (const rule of rules) {
+        if (!rule?.enabled) continue;
+        try {
+            const regex = compileCleanerRule(rule);
+            let hits = 0;
+            value = value.replace(regex, (...args) => {
+                hits++;
+                return String(rule.replace || '').replace(/\$(\d+)/g, (_match, index) => String(args[Number(index)] || ''));
+            });
+            if (collectStats) {
+                stats.push({
+                    id: rule.id || rule.label || t`Unnamed Rule`,
+                    label: rule.label || rule.id || t`Unnamed Rule`,
+                    hits,
+                });
+            }
+        } catch (error) {
+            console.warn('[CIA] Invalid context cleaner rule:', rule, error);
+            if (collectStats) {
+                stats.push({
+                    id: rule?.id || rule?.label || t`Invalid Rule`,
+                    label: rule?.label || rule?.id || t`Invalid Rule`,
+                    hits: 0,
+                    error: String(error?.message || error),
+                });
+            }
+        }
+    }
+
+    value = value
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    return collectStats ? { text: value, stats } : value;
+}
+
+function cleanPlannerContextText(text) {
+    return applyContextCleanerRules(text);
+}
+
+function buildCleanPlannerContext(messageId) {
+    const settings = ensureSettings();
+    const start = Math.max(0, messageId - settings.contextMessages + 1);
+    const rawLines = [];
+    const cleanedLines = [];
+    let originalChars = 0;
+    let cleanedChars = 0;
+    let changedMessages = 0;
+    const ruleHits = {};
+    const ruleErrors = {};
+
+    for (let i = start; i <= messageId; i++) {
+        const message = chat[i];
+        if (!message) continue;
+        if (message.is_system && !settings.includeSystem) continue;
+
+        const role = message.is_user ? 'user' : message.is_system ? 'system' : 'assistant';
+        const name = settings.includeNames && message.name ? `${message.name} ` : '';
+        const header = `#${i} ${role} ${name}`.trim();
+        let rawText = getMessageText(message).trim();
+        if (settings.filterCiaJsonFromPlugin) {
+            rawText = stripCandidateJsonBlocks(rawText).trim();
+        } else {
+            rawText = sanitizeCandidateJsonBlocksForPlanner(rawText).trim();
+        }
+        const cleaned = applyContextCleanerRules(rawText, { collectStats: true });
+        const cleanedText = cleaned.text;
+        for (const stat of cleaned.stats) {
+            const key = stat.id || stat.label;
+            if (!ruleHits[key]) {
+                ruleHits[key] = { label: stat.label || key, hits: 0 };
+            }
+            ruleHits[key].hits += stat.hits || 0;
+            if (stat.error) {
+                ruleErrors[key] = stat.error;
+            }
+        }
+        if (!rawText && !cleanedText) continue;
+
+        originalChars += rawText.length;
+        cleanedChars += cleanedText.length;
+        if (rawText !== cleanedText) changedMessages++;
+        if (rawText) rawLines.push(`${header}:\n${rawText}`);
+        if (cleanedText) cleanedLines.push(`${header}:\n${cleanedText}`);
+    }
+
+    let rawContext = rawLines.join('\n\n');
+    let cleanedContext = cleanedLines.join('\n\n');
+    const truncated = settings.contextChars > 0 && cleanedContext.length > settings.contextChars;
+    if (settings.contextChars > 0 && rawContext.length > settings.contextChars) {
+        rawContext = `[Context truncated from top]\n${rawContext.slice(-settings.contextChars)}`;
+    }
+    if (truncated) {
+        cleanedContext = `[Context truncated from top]\n${cleanedContext.slice(-settings.contextChars)}`;
+    }
+
+    return {
+        rawContext,
+        cleanedContext,
+        originalChars,
+        cleanedChars,
+        changedMessages,
+        truncated,
+        messageCount: cleanedLines.length,
+        ruleHits,
+        ruleErrors,
+    };
 }
 
 function getComfyPlaceholderDefault(name, fallback = 0, range = null) {
@@ -1840,7 +2033,7 @@ function getComfyPlaceholderDefault(name, fallback = 0, range = null) {
     return clampNumber(value, min, max, fallback);
 }
 
-function buildUserPrompt(messageId, { imageReference = null, ragTags = '' } = {}) {
+function buildUserPrompt(messageId, { imageReference = null } = {}) {
     const settings = ensureSettings();
     const numericProps = getNumericSchemaProperties(settings);
     const defaultsStr = numericProps.map(prop => {
@@ -1849,46 +2042,39 @@ function buildUserPrompt(messageId, { imageReference = null, ragTags = '' } = {}
     }).join(', ');
 
     const parts = [];
-    const prependMessage = String(settings.prependMessage || '').trim();
-    if (prependMessage) {
-        parts.push('[Additional Info Start]', prependMessage, '[Additional Info End]', '');
-    }
-
-    if (ragTags) {
-        parts.push('[RAG Tags Start]', `知识库召回参考标签 (RAG Tags): ${ragTags}`, '[RAG Tags End]', '');
-    }
-
-    if (imageReference) {
-        const mode = imageReference.mode || 'adjust';
-        if (mode === 'adjust') {
-            const imageReferenceBlock = buildImageReferenceBlock(imageReference);
-            if (imageReferenceBlock) {
-                parts.push(imageReferenceBlock, '');
-            }
-        } else if (mode === 'rewrite') {
-            const extraInstruction = String(imageReference.extraInstruction || '').trim();
-            if (extraInstruction) {
-                parts.push(
-                    '[User Extra Requirements Start]',
-                    `This is the user's extra requirement:\n${extraInstruction}`,
-                    '[User Extra Requirements End]',
-                    '',
-                );
-            }
-        }
-    }
-
+    const editReference = isImageEditReference(imageReference) ? imageReference : null;
     parts.push(
-        'Please generate a JSON object for the current message illustration based on the following conversation context.',
-        '',
-        defaultsStr ? `Default LoRA strengths for current user: ${defaultsStr}` : '',
+        '<image_generation_request>',
+        '<conversation_context>',
+        buildContext(messageId),
+        '</conversation_context>',
     );
-    const referenceBlock = buildCharacterReferenceBlock();
-    if (referenceBlock) {
-        parts.push('', referenceBlock);
+    if (editReference) {
+        parts.push(
+            '',
+            '<edit_request>',
+            '<instruction>Modify the image-generation plan according to the user requirements below. Preserve details that the user did not ask to change.</instruction>',
+            buildImageReferenceBlock(editReference),
+            '<user_requirements>',
+            String(editReference.extraInstruction || '').trim(),
+            '</user_requirements>',
+            '</edit_request>',
+        );
     }
-    parts.push('', '[Conversation Context Start]', buildContext(messageId), '[Conversation Context End]');
+    if (defaultsStr) {
+        parts.push('', '<runtime_defaults>', defaultsStr, '</runtime_defaults>');
+    }
+    parts.push('</image_generation_request>');
     return parts.join('\n');
+}
+
+function isImageEditReference(imageReference) {
+    return Boolean(
+        imageReference
+        && (imageReference.mode || 'adjust') === 'adjust'
+        && String(imageReference.extraInstruction || '').trim()
+        && String(imageReference.prompt || '').trim()
+    );
 }
 
 function buildImageReferenceBlock(imageReference) {
@@ -1897,25 +2083,26 @@ function buildImageReferenceBlock(imageReference) {
     }
 
     const lines = [
-        '[Generated Image Reference Start]',
-        'Below are the prompts and parameters of a previously generated image. Please reconstruct a new candidate JSON based on it, maintaining the context of the current message floor, correcting or enhancing the visual expression, and avoiding robotic repetition.',
-        `prompt: ${imageReference.prompt}`,
-        `negative_prompt: ${imageReference.negative_prompt || ''}`,
+        '<previous_candidate>',
+        `<prompt>${imageReference.prompt}</prompt>`,
+        `<negative_prompt>${imageReference.negative_prompt || ''}</negative_prompt>`,
+        '<parameters>',
     ];
 
     const settings = ensureSettings();
     const numericProps = getNumericSchemaProperties(settings);
     for (const prop of numericProps) {
         const val = imageReference[prop.key] !== undefined ? imageReference[prop.key] : prop.default;
-        lines.push(`${prop.key}: ${val}`);
+        lines.push(`<parameter name="${prop.key}">${val}</parameter>`);
     }
+    lines.push('</parameters>');
 
     const extraInstruction = String(imageReference.extraInstruction || '').trim();
     if (extraInstruction) {
-        lines.push('[User Reconstruct Instructions]', extraInstruction);
+        lines.push('<user_instruction>', extraInstruction, '</user_instruction>');
     }
 
-    lines.push('[Generated Image Reference End]');
+    lines.push('</previous_candidate>');
     return lines.join('\n');
 }
 
@@ -1951,23 +2138,6 @@ function getCurrentReferenceEntry() {
     return settings.characterReferences[target.key] || null;
 }
 
-function buildCharacterReferenceBlock() {
-    const settings = ensureSettings();
-    const entry = getCurrentReferenceEntry();
-    const referenceText = String(entry?.text || '').trim();
-    if (!referenceText) {
-        return '';
-    }
-
-    const referencePrompt = String(entry?.prompt || settings.referencePrompt || DEFAULT_REFERENCE_PROMPT).trim();
-    return [
-        '[Character Reference Start]',
-        referencePrompt,
-        referenceText,
-        '[Character Reference End]',
-    ].join('\n');
-}
-
 function updateReferenceStatusUi() {
     const status = $('#cia_reference_status');
     if (!status.length) {
@@ -1991,11 +2161,6 @@ function getSavedReferenceEntries() {
 
 async function openSystemPromptEditor() {
     const settings = ensureSettings();
-    const tempPrompts = {
-        legacy: settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT,
-        rag: settings.ragSystemPrompt || RAG_SYSTEM_PROMPT,
-    };
-    let lastMode = settings.promptMode === 'rag' ? 'rag' : 'legacy';
 
     const content = $(applyLocale(`
         <div class="cia-prompt-editor-wrapper">
@@ -2003,15 +2168,6 @@ async function openSystemPromptEditor() {
                 <div class="cia-ref-selector-group" style="display: flex; align-items: center; gap: 8px;">
                     <i class="fa-solid fa-gears" style="color: var(--SmartThemeQuoteColor, #78beff); margin-right: 6px;"></i>
                     <span style="font-size: 1.05em; font-weight: 600;" data-i18n="System Instructions Configuration (System Prompt)">System Instructions Configuration (System Prompt)</span>
-                    <select id="cia_prompt_mode_popup_select" class="text_pole" style="width: auto; margin: 0; padding: 2px 8px; font-size: 0.9em; height: auto;">
-                        <option value="legacy" data-i18n="Legacy System Prompt">Legacy System Prompt</option>
-                        <option value="rag" data-i18n="RAG System Prompt">RAG System Prompt</option>
-                    </select>
-                </div>
-                <div class="cia-ref-toolbar">
-                    <button id="cia_prompt_reset_btn" class="cia-icon-btn" type="button" data-i18n="[title]Reset to default system prompt" title="Reset to default system prompt">
-                        <i class="fa-solid fa-rotate-left"></i>
-                    </button>
                 </div>
             </div>
 
@@ -2022,32 +2178,16 @@ async function openSystemPromptEditor() {
                 </div>
             </div>
 
-            <textarea id="cia_prompt_editor_textarea" class="cia-monospace-textarea" style="height: 60vh;" data-i18n="[placeholder]Please enter system prompt..." placeholder="Please enter system prompt..."></textarea>
+            <textarea id="cia_prompt_editor_textarea" class="cia-monospace-textarea cia-system-prompt-textarea" data-i18n="[placeholder]Please enter system prompt..." placeholder="Please enter system prompt..."></textarea>
         </div>
     `));
 
-    content.find('#cia_prompt_editor_textarea').val(tempPrompts[lastMode]);
-    content.find('#cia_prompt_mode_popup_select').val(lastMode);
-
-    content.find('#cia_prompt_mode_popup_select').on('change', function() {
-        const newMode = $(this).val() === 'rag' ? 'rag' : 'legacy';
-        tempPrompts[lastMode] = content.find('#cia_prompt_editor_textarea').val();
-        content.find('#cia_prompt_editor_textarea').val(tempPrompts[newMode]);
-        lastMode = newMode;
-    });
-
-    content.find('#cia_prompt_reset_btn').on('click', () => {
-        const currentMode = content.find('#cia_prompt_mode_popup_select').val() === 'rag' ? 'rag' : 'legacy';
-        const resetVal = currentMode === 'rag' ? RAG_SYSTEM_PROMPT : SYSTEM_PROMPT_DEFAULT;
-        content.find('#cia_prompt_editor_textarea').val(resetVal);
-        toastr.info(t`Restored default system prompt. Click "Save" below to apply changes.`, 'Context Image Assistant');
-    });
+    content.find('#cia_prompt_editor_textarea').val(settings.legacySystemPrompt || SYSTEM_PROMPT_DEFAULT);
 
     const popup = new Popup(content, POPUP_TYPE.CONFIRM, null, {
         okButton: t`Save`,
         cancelButton: t`Cancel`,
         wide: true,
-        large: true,
         leftAlign: true,
     });
 
@@ -2057,33 +2197,201 @@ async function openSystemPromptEditor() {
     }
 
     const edited = String(content.find('#cia_prompt_editor_textarea').val() || '').trim();
-    const selectedMode = content.find('#cia_prompt_mode_popup_select').val() === 'rag' ? 'rag' : 'legacy';
-    tempPrompts[selectedMode] = edited;
-
-    settings.legacySystemPrompt = tempPrompts.legacy;
-    settings.ragSystemPrompt = tempPrompts.rag;
-    settings.promptMode = selectedMode;
+    settings.legacySystemPrompt = edited;
     settings.systemPrompt = getActiveSystemPrompt(settings);
 
-    $('#cia_prompt_mode_select').val(selectedMode);
     $('#cia_system_prompt').val(settings.systemPrompt);
     saveFromUi();
     toastr.success(t`System prompt saved successfully.`, 'Context Image Assistant');
 }
 
+async function openAdditionalImageInstructionsEditor() {
+    const settings = ensureSettings();
+    const initialDraft = String(settings.prependMessage || '');
+    const content = $(applyLocale(`
+        <div class="cia-prompt-editor-wrapper cia-additional-instructions-wrapper">
+            <div class="cia-ref-toolbar-row" style="margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-list-check" style="color: var(--SmartThemeQuoteColor, #78beff);"></i>
+                <span style="font-size: 1.05em; font-weight: 600;" data-i18n="Additional Image Instructions">Additional Image Instructions</span>
+            </div>
+            <div class="cia-additional-profile-row">
+                <label class="cia-additional-profile-selector" for="cia_additional_profile_select">
+                    <span data-i18n="Instruction Configuration">Instruction Configuration</span>
+                    <select id="cia_additional_profile_select" class="text_pole"></select>
+                </label>
+                <div class="cia-ref-toolbar">
+                    <button id="cia_additional_profile_save" class="cia-icon-btn" type="button" data-i18n="[title]Save instruction configuration" title="Save instruction configuration"><i class="fa-solid fa-floppy-disk"></i></button>
+                    <button id="cia_additional_profile_rename" class="cia-icon-btn" type="button" data-i18n="[title]Rename instruction configuration" title="Rename instruction configuration"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button id="cia_additional_profile_new" class="cia-icon-btn" type="button" data-i18n="[title]Create instruction configuration" title="Create instruction configuration"><i class="fa-solid fa-plus"></i></button>
+                    <button id="cia_additional_profile_delete" class="cia-icon-btn" type="button" data-i18n="[title]Delete instruction configuration" title="Delete instruction configuration"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </div>
+            <div class="cia-ref-status-banner" style="gap: 10px; padding: 10px 14px;">
+                <i class="fa-solid fa-circle-info" style="color: var(--SmartThemeQuoteColor, #78beff); font-size: 1.1em; flex-shrink: 0;"></i>
+                <div class="context-label" style="font-size: 0.88em; line-height: 1.45; opacity: 0.85;" data-i18n="Additional Image Instructions Intro">
+                    These instructions are injected into the planner system prompt and take priority over its default behavior. Leave empty when no additional rules are needed.
+                </div>
+            </div>
+            <textarea id="cia_additional_instructions_editor" class="cia-monospace-textarea cia-additional-instructions-textarea" data-i18n="[placeholder]Additional Image Instructions Placeholder" placeholder="e.g. Prefer close compositions; keep background characters indistinct."></textarea>
+        </div>
+    `));
+    const select = content.find('#cia_additional_profile_select');
+    const textarea = content.find('#cia_additional_instructions_editor');
+
+    const getProfiles = () => settings.additionalInstructionProfiles
+        .filter(profile => String(profile?.name || '').trim())
+        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+
+    const populateProfiles = (selectedName = '') => {
+        const profiles = getProfiles();
+        select.empty().append($('<option></option>')
+            .val('')
+            .text(initialDraft.trim() ? t`Current unsaved instructions` : t`No active instructions`));
+        for (const profile of profiles) {
+            select.append($('<option></option>').val(profile.name).text(profile.name));
+        }
+        const exists = profiles.some(profile => profile.name === selectedName);
+        select.val(exists ? selectedName : '');
+    };
+
+    const loadSelectedProfile = () => {
+        const name = String(select.val() || '');
+        const profile = settings.additionalInstructionProfiles.find(item => item.name === name);
+        textarea.val(profile ? profile.content : initialDraft);
+        content.find('#cia_additional_profile_rename, #cia_additional_profile_delete').prop('disabled', !profile);
+    };
+
+    const createProfile = async () => {
+        const name = await Popup.show.input(t`New Instruction Configuration`, t`Please enter the name of the new instruction configuration:`);
+        const trimmedName = String(name || '').trim();
+        if (!trimmedName) return '';
+        if (settings.additionalInstructionProfiles.some(profile => profile.name === trimmedName)) {
+            toastr.error(t`An instruction configuration with this name already exists.`, 'Context Image Assistant');
+            return '';
+        }
+        settings.additionalInstructionProfiles.push({
+            name: trimmedName,
+            content: String(textarea.val() || '').trim(),
+            updatedAt: new Date().toISOString(),
+        });
+        saveSettingsDebounced();
+        populateProfiles(trimmedName);
+        loadSelectedProfile();
+        toastr.success(t`Instruction configuration created.`, 'Context Image Assistant');
+        return trimmedName;
+    };
+
+    const activeName = settings.additionalInstructionProfiles.some(profile => profile.name === settings.activeAdditionalInstructionProfile)
+        ? settings.activeAdditionalInstructionProfile
+        : '';
+    populateProfiles(activeName);
+    loadSelectedProfile();
+
+    select.on('change', loadSelectedProfile);
+
+    content.find('#cia_additional_profile_new').on('click', createProfile);
+
+    content.find('#cia_additional_profile_save').on('click', async () => {
+        let name = String(select.val() || '');
+        if (!name) {
+            name = await createProfile();
+            if (!name) return;
+        }
+        const profile = settings.additionalInstructionProfiles.find(item => item.name === name);
+        if (!profile) return;
+        profile.content = String(textarea.val() || '').trim();
+        profile.updatedAt = new Date().toISOString();
+        saveSettingsDebounced();
+        populateProfiles(name);
+        loadSelectedProfile();
+        toastr.success(t`Instruction configuration saved.`, 'Context Image Assistant');
+    });
+
+    content.find('#cia_additional_profile_rename').on('click', async () => {
+        const oldName = String(select.val() || '');
+        if (!oldName) return;
+        const newName = await Popup.show.input(t`Rename Instruction Configuration`, t`Please enter the new instruction configuration name:`, oldName);
+        const trimmedName = String(newName || '').trim();
+        if (!trimmedName || trimmedName === oldName) return;
+        if (settings.additionalInstructionProfiles.some(profile => profile.name === trimmedName)) {
+            toastr.error(t`An instruction configuration with this name already exists.`, 'Context Image Assistant');
+            return;
+        }
+        const profile = settings.additionalInstructionProfiles.find(item => item.name === oldName);
+        if (!profile) return;
+        profile.name = trimmedName;
+        profile.updatedAt = new Date().toISOString();
+        if (settings.activeAdditionalInstructionProfile === oldName) {
+            settings.activeAdditionalInstructionProfile = trimmedName;
+        }
+        saveSettingsDebounced();
+        populateProfiles(trimmedName);
+        loadSelectedProfile();
+        toastr.success(t`Instruction configuration renamed.`, 'Context Image Assistant');
+    });
+
+    content.find('#cia_additional_profile_delete').on('click', async () => {
+        const name = String(select.val() || '');
+        if (!name) return;
+        const confirm = await Popup.show.confirm(t`Delete Instruction Configuration`, t`Are you sure you want to permanently delete this instruction configuration?`);
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) return;
+        settings.additionalInstructionProfiles = settings.additionalInstructionProfiles.filter(profile => profile.name !== name);
+        if (settings.activeAdditionalInstructionProfile === name) {
+            settings.activeAdditionalInstructionProfile = '';
+        }
+        saveSettingsDebounced();
+        populateProfiles();
+        loadSelectedProfile();
+        toastr.info(t`Instruction configuration deleted.`, 'Context Image Assistant');
+    });
+
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, null, {
+        okButton: t`Save`,
+        cancelButton: t`Cancel`,
+        wide: true,
+        leftAlign: true,
+    });
+    const result = await popup.show();
+    if (result !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    const value = String(content.find('#cia_additional_instructions_editor').val() || '').trim();
+    const selectedProfileName = String(select.val() || '');
+    const selectedProfile = settings.additionalInstructionProfiles.find(profile => profile.name === selectedProfileName);
+    if (selectedProfile) {
+        selectedProfile.content = value;
+        selectedProfile.updatedAt = new Date().toISOString();
+    }
+    settings.activeAdditionalInstructionProfile = selectedProfile ? selectedProfileName : '';
+    $('#cia_prepend_message').val(value);
+    settings.prependMessage = value;
+    saveFromUi();
+    toastr.success(t`Additional image instructions saved.`, 'Context Image Assistant');
+}
+
 function ensureSchemaConstraints(schema) {
     if (!schema || typeof schema !== 'object') return schema;
 
-    let properties = null;
+    let schemaValue = null;
     if (schema.value && typeof schema.value === 'object' && !Array.isArray(schema.value)) {
-        properties = schema.value.properties;
+        schemaValue = schema.value;
+    } else if (schema.schema && typeof schema.schema === 'object' && !Array.isArray(schema.schema)) {
+        schemaValue = schema.schema;
     } else if (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)) {
-        properties = schema.properties;
+        schemaValue = schema;
     }
 
-    if (properties && typeof properties === 'object') {
+    const properties = schemaValue?.properties;
+    if (schemaValue && properties && typeof properties === 'object' && !Array.isArray(properties)) {
+        schemaValue.type = 'object';
+        schemaValue.additionalProperties = false;
+        for (const key of FIXED_SCHEMA_KEYS) {
+            properties[key] = JSON.parse(JSON.stringify(FIXED_SCHEMA_PROPERTIES[key]));
+        }
+
         for (const [key, prop] of Object.entries(properties)) {
-            if (key === 'prompt' || key === 'negative_prompt') {
+            if (FIXED_SCHEMA_KEYS.includes(key)) {
                 continue;
             }
             if (prop && typeof prop === 'object' && (prop.type === 'number' || prop.type === 'integer')) {
@@ -2095,6 +2403,17 @@ function ensureSchemaConstraints(schema) {
                 }
             }
         }
+
+        const existingRequired = Array.isArray(schemaValue.required) ? schemaValue.required : [];
+        schemaValue.required = [
+            ...FIXED_SCHEMA_KEYS,
+            ...existingRequired.filter(key => !FIXED_SCHEMA_KEYS.includes(key) && properties[key] !== undefined),
+            ...Object.keys(properties).filter(key => !FIXED_SCHEMA_KEYS.includes(key) && !existingRequired.includes(key)),
+        ];
+    }
+    if (schema.value) {
+        schema.name = String(schema.name || 'context_image_request');
+        schema.strict = true;
     }
     return schema;
 }
@@ -2164,7 +2483,7 @@ function validateSchemaString(rawText) {
     throw new Error(t`JSON Schema outer structure must be an object.`);
 }
 
-function createLoraCardHtml(key, title, description, min, max, defaultValue) {
+function createLoraCardHtml(key, title, description, min, max, defaultValue, guide = '') {
     return applyLocale(`
         <div class="cia-schema-lora-card" data-key="${key}">
             <div class="cia-schema-lora-card-header">
@@ -2201,17 +2520,36 @@ function createLoraCardHtml(key, title, description, min, max, defaultValue) {
                         <input type="number" step="0.05" class="text_pole cia-schema-lora-default" value="${defaultValue}" />
                     </div>
                 </div>
+                <div class="cia-schema-field-item" style="margin-top: 8px;">
+                    <span data-i18n="Usage Guide (AI Instructions)">Usage Guide (AI Instructions)</span>
+                    <textarea class="text_pole cia-schema-lora-guide" rows="3" data-i18n="[placeholder]e.g., Set -1 for dark scenes, 0 for normal, describes when/how AI should pick values" placeholder="e.g., Set -1 for dark scenes, 0 for normal, describes when/how AI should pick values">${guide}</textarea>
+                </div>
             </div>
         </div>
     `);
 }
 
 function serializeVisualToSchemaObj(content) {
-    const properties = {
-        prompt: { type: 'string' },
-        negative_prompt: { type: 'string' },
-    };
-    const required = ['prompt', 'negative_prompt'];
+    const properties = {};
+    const required = [];
+
+    try {
+        const srcStr = String(content.find('#cia_schema_source_textarea').val() || '{}');
+        const srcObj = JSON.parse(srcStr);
+        const srcProps = srcObj?.value?.properties || srcObj?.properties || {};
+        const srcReq = Array.isArray(srcObj?.value?.required) ? srcObj.value.required : (Array.isArray(srcObj?.required) ? srcObj.required : []);
+        for (const [k, v] of Object.entries(srcProps)) {
+            if (!FIXED_SCHEMA_KEYS.includes(k) && v && v.type === 'string') {
+                properties[k] = v;
+                if (srcReq.includes(k)) required.push(k);
+            }
+        }
+    } catch (e) {}
+
+    for (const key of FIXED_SCHEMA_KEYS) {
+        properties[key] = JSON.parse(JSON.stringify(FIXED_SCHEMA_PROPERTIES[key]));
+    }
+    required.push(...FIXED_SCHEMA_KEYS);
 
     let valid = true;
     let errorMessage = '';
@@ -2229,7 +2567,7 @@ function serializeVisualToSchemaObj(content) {
             errorMessage = t`LoRA parameter key "${rawKey}" is invalid. It must start with a letter or underscore, and only contain letters, numbers, and underscores.`;
             return false;
         }
-        if (rawKey === 'prompt' || rawKey === 'negative_prompt') {
+        if (FIXED_SCHEMA_KEYS.includes(rawKey)) {
             valid = false;
             errorMessage = t`LoRA parameter key cannot be the reserved keyword "${rawKey}".`;
             return false;
@@ -2273,7 +2611,7 @@ function serializeVisualToSchemaObj(content) {
     };
 }
 
-function deserializeSchemaObjToVisual(schemaObj, loraListContainer) {
+function deserializeSchemaObjToVisual(schemaObj, loraListContainer, loraGuides = {}) {
     loraListContainer.empty();
     const properties = schemaObj?.value?.properties || schemaObj?.properties;
     if (!properties || typeof properties !== 'object') {
@@ -2281,7 +2619,7 @@ function deserializeSchemaObjToVisual(schemaObj, loraListContainer) {
     }
 
     for (const [key, prop] of Object.entries(properties)) {
-        if (key === 'prompt' || key === 'negative_prompt') {
+        if (FIXED_SCHEMA_KEYS.includes(key)) {
             continue;
         }
         if (prop && (prop.type === 'number' || prop.type === 'integer')) {
@@ -2290,20 +2628,73 @@ function deserializeSchemaObjToVisual(schemaObj, loraListContainer) {
             const min = prop.minimum !== undefined ? prop.minimum : '';
             const max = prop.maximum !== undefined ? prop.maximum : '';
             const defVal = prop.default !== undefined ? prop.default : '';
+            const guide = String(loraGuides[key] || '');
 
-            const cardHtml = createLoraCardHtml(key, title, desc, min, max, defVal);
+            const cardHtml = createLoraCardHtml(key, title, desc, min, max, defVal, guide);
             loraListContainer.append(cardHtml);
         }
     }
 }
 
-function savePopupStateToProfile(profileName, schemaStr) {
+/** Reads the usage guide text from each LoRA card in the popup. */
+function extractLoraGuides(content) {
+    const guides = {};
+    content.find('.cia-schema-lora-card').each(function () {
+        const card = $(this);
+        const key = String(card.find('.cia-schema-lora-key').val() || '').trim();
+        const guide = String(card.find('.cia-schema-lora-guide').val() || '').trim();
+        if (key) guides[key] = guide;
+    });
+    return guides;
+}
+
+/** Compiles the text content to inject between <lora_config> tags from a saved profile. */
+function buildLoraConfigContent(profile) {
+    if (!profile) return '';
+    const schemaStr = profile.customJsonSchema || '';
+    if (!schemaStr) return '';
+
+    let schemaObj;
+    try { schemaObj = validateSchemaString(schemaStr); } catch (e) { return ''; }
+
+    const properties = schemaObj?.value?.properties || schemaObj?.properties || {};
+    const guides = profile.loraGuides || {};
+    const extra = String(profile.loraConfigExtra || '').trim();
+
+    const lines = [];
+    const fieldLines = [];
+    for (const [key, prop] of Object.entries(properties)) {
+        if (FIXED_SCHEMA_KEYS.includes(key)) continue;
+        if (!prop || (prop.type !== 'number' && prop.type !== 'integer')) continue;
+        const title = prop.title || key;
+        const min = prop.minimum !== undefined ? prop.minimum : '?';
+        const max = prop.maximum !== undefined ? prop.maximum : '?';
+        const defVal = prop.default !== undefined ? prop.default : 0;
+        fieldLines.push(`- \`${key}\` — ${title}，范围 [\`${min}\`, \`${max}\`]，默认值 \`${defVal}\``);
+        const guide = String(guides[key] || '').trim();
+        if (guide) fieldLines.push(`  赋值规则: ${guide}`);
+    }
+
+    if (fieldLines.length > 0) {
+        lines.push('**JSON 输出字段与赋值规则**:', ...fieldLines);
+    }
+    if (extra) {
+        if (lines.length > 0) lines.push('');
+        lines.push(extra);
+    }
+    return lines.join('\n');
+}
+
+function savePopupStateToProfile(profileName, schemaStr, loraGuides = {}, loraConfigExtra = '') {
     const settings = ensureSettings();
+    const normalizedSchema = JSON.stringify(validateSchemaString(schemaStr), null, 2);
     const index = settings.jsonSchemaProfiles.findIndex(x => String(x?.name || '') === profileName);
     const next = {
         name: profileName,
         useCustomJsonSchema: true,
-        customJsonSchema: schemaStr,
+        customJsonSchema: normalizedSchema,
+        loraGuides,
+        loraConfigExtra,
         updatedAt: new Date().toISOString(),
     };
     if (index >= 0) {
@@ -2355,6 +2746,11 @@ async function openCustomJsonSchemaEditor() {
                     <div class="cia-schema-section-title" data-i18n="Fixed Fields (Read Only)">Fixed Fields (Read Only)</div>
                     <div class="cia-schema-fixed-fields">
                         <div class="cia-schema-fixed-card">
+                            <span class="cia-schema-card-key">reasoning</span>
+                            <span class="cia-schema-card-type">string</span>
+                            <span class="cia-schema-card-desc" data-i18n="Complete Step 0-8 reasoning used by the prompt planner.">Complete Step 0-8 reasoning used by the prompt planner.</span>
+                        </div>
+                        <div class="cia-schema-fixed-card">
                             <span class="cia-schema-card-key">prompt</span>
                             <span class="cia-schema-card-type">string</span>
                             <span class="cia-schema-card-desc" data-i18n="Prompt to generate generated by AI planning.">Prompt to generate generated by AI planning.</span>
@@ -2374,12 +2770,18 @@ async function openCustomJsonSchemaEditor() {
                     </div>
 
                     <div class="cia-schema-lora-list" id="cia_schema_lora_list"></div>
+
+                    <div class="cia-schema-section-title" style="margin-top: 20px;">
+                        <span data-i18n="Additional LoRA Config Info">附加 LoRA 配置说明</span>
+                    </div>
+                    <div class="cia-editor-desc" style="font-size: 0.85em; opacity: 0.7; margin-bottom: 6px;">注入到 &lt;lora_config&gt; 块的补充说明文本（如光影后缀 token 列表、全局赋值规则等），随当前配置文件保存。</div>
+                    <textarea id="cia_schema_lora_config_extra" class="text_pole" style="min-height: 100px;" rows="5" data-i18n="[placeholder]e.g. Lighting suffix tokens: anee23k = night, ddyk89t = day" placeholder="例如：光影后缀 token：anee23k = 夜晚无灯，ddyk89t = 白天"></textarea>
                 </div>
             </div>
 
             <div class="cia-schema-tab-content" id="cia-schema-tab-source">
                 <div class="cia-editor-desc" style="font-size: 0.9em; opacity: 0.75; margin-bottom: 8px;" data-i18n="Edit JSON schema template constraining the output.">Edit JSON schema template constraining the output.</div>
-                <textarea id="cia_schema_source_textarea" class="cia-monospace-textarea" rows="24"></textarea>
+                <textarea id="cia_schema_source_textarea" class="cia-monospace-textarea cia-schema-source-textarea"></textarea>
             </div>
         </div>
     `));
@@ -2415,11 +2817,12 @@ async function openCustomJsonSchemaEditor() {
 
         const schemaStr = profile.customJsonSchema || JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
         content.find('#cia_schema_source_textarea').val(schemaStr);
+        content.find('#cia_schema_lora_config_extra').val(profile.loraConfigExtra || '');
 
         const activeTab = content.find('.cia-schema-tab-btn.active').attr('data-tab');
         try {
             const schemaObj = validateSchemaString(schemaStr);
-            deserializeSchemaObjToVisual(schemaObj, content.find('#cia_schema_lora_list'));
+            deserializeSchemaObjToVisual(schemaObj, content.find('#cia_schema_lora_list'), profile.loraGuides || {});
         } catch (e) {
             if (activeTab === 'visual') {
                 content.find('.cia-schema-tab-btn[data-tab="source"]').click();
@@ -2470,9 +2873,12 @@ async function openCustomJsonSchemaEditor() {
             }
         } else if (currentTab === 'source' && targetTab === 'visual') {
             try {
+                const selectVal = content.find('#cia_schema_popup_profile_select').val();
+                const existingProfile = settings.jsonSchemaProfiles.find(x => x.name === selectVal);
+                const guides = existingProfile ? (existingProfile.loraGuides || {}) : {};
                 const rawText = content.find('#cia_schema_source_textarea').val();
                 const schemaObj = validateSchemaString(rawText);
-                deserializeSchemaObjToVisual(schemaObj, content.find('#cia_schema_lora_list'));
+                deserializeSchemaObjToVisual(schemaObj, content.find('#cia_schema_lora_list'), guides);
             } catch (err) {
                 toastr.error(err.message, 'Context Image Assistant');
                 return;
@@ -2497,8 +2903,9 @@ async function openCustomJsonSchemaEditor() {
                 const schemaObj = serializeVisualToSchemaObj(content);
                 schemaStr = JSON.stringify(schemaObj, null, 2);
             } else {
-                schemaStr = String(content.find('#cia_schema_source_textarea').val() || '').trim();
-                validateSchemaString(schemaStr);
+                const schemaObj = validateSchemaString(content.find('#cia_schema_source_textarea').val());
+                schemaStr = JSON.stringify(schemaObj, null, 2);
+                content.find('#cia_schema_source_textarea').val(schemaStr);
             }
         } catch (err) {
             toastr.error(err.message, 'Context Image Assistant');
@@ -2510,8 +2917,18 @@ async function openCustomJsonSchemaEditor() {
             return;
         }
 
-        savePopupStateToProfile(selectVal, schemaStr);
-        saveSettingsDebounced();
+        const existingProfile = settings.jsonSchemaProfiles.find(x => x.name === selectVal);
+        const guides = activeTab === 'visual' ? extractLoraGuides(content) : (existingProfile ? existingProfile.loraGuides : {});
+        const extra = String(content.find('#cia_schema_lora_config_extra').val() || '').trim();
+
+        savePopupStateToProfile(selectVal, schemaStr, guides, extra);
+        const savedProfile = settings.jsonSchemaProfiles.find(x => x.name === selectVal);
+        settings.loraConfigContent = buildLoraConfigContent(savedProfile);
+
+        // Sync to main UI so it doesn't revert on next open
+        $('#cia_custom_json_schema').val(schemaStr).trigger('input');
+        saveFromUi();
+
         toastr.success(t`Format "${selectVal}" saved.`, 'Context Image Assistant');
 
         populateSchemaSelect(selectVal);
@@ -2557,14 +2974,17 @@ async function openCustomJsonSchemaEditor() {
                 const schemaObj = serializeVisualToSchemaObj(content);
                 schemaStr = JSON.stringify(schemaObj, null, 2);
             } else {
-                schemaStr = String(content.find('#cia_schema_source_textarea').val() || '').trim();
-                validateSchemaString(schemaStr);
+                const schemaObj = validateSchemaString(content.find('#cia_schema_source_textarea').val());
+                schemaStr = JSON.stringify(schemaObj, null, 2);
+                content.find('#cia_schema_source_textarea').val(schemaStr);
             }
         } catch (e) {
             schemaStr = JSON.stringify(IMAGE_JSON_SCHEMA, null, 2);
         }
 
-        savePopupStateToProfile(name, schemaStr);
+        const guides = activeTab === 'visual' ? extractLoraGuides(content) : {};
+        const extra = String(content.find('#cia_schema_lora_config_extra').val() || '').trim();
+        savePopupStateToProfile(name, schemaStr, guides, extra);
         saveSettingsDebounced();
 
         populateSchemaSelect(name);
@@ -2606,7 +3026,6 @@ async function openCustomJsonSchemaEditor() {
         okButton: t`Save`,
         cancelButton: t`Cancel`,
         wide: true,
-        large: true,
         leftAlign: true,
         onClosing: async (p) => {
             if (p.result !== POPUP_RESULT.AFFIRMATIVE) {
@@ -2621,14 +3040,21 @@ async function openCustomJsonSchemaEditor() {
                     const schemaObj = serializeVisualToSchemaObj(content);
                     schemaStr = JSON.stringify(schemaObj, null, 2);
                 } else {
-                    schemaStr = String(content.find('#cia_schema_source_textarea').val() || '').trim();
-                    validateSchemaString(schemaStr);
+                    const schemaObj = validateSchemaString(content.find('#cia_schema_source_textarea').val());
+                    schemaStr = JSON.stringify(schemaObj, null, 2);
+                    content.find('#cia_schema_source_textarea').val(schemaStr);
                 }
 
                 // Sync current value to select profile
                 const selectVal = content.find('#cia_schema_popup_profile_select').val();
+                const existingProfile = settings.jsonSchemaProfiles.find(x => x.name === selectVal);
+                const guides = activeTab === 'visual' ? extractLoraGuides(content) : (existingProfile ? existingProfile.loraGuides : {});
+                const extra = String(content.find('#cia_schema_lora_config_extra').val() || '').trim();
                 if (selectVal) {
-                    savePopupStateToProfile(selectVal, schemaStr);
+                    savePopupStateToProfile(selectVal, schemaStr, guides, extra);
+                    // Compile and store lora_config injection content
+                    const savedProfile = settings.jsonSchemaProfiles.find(x => x.name === selectVal);
+                    settings.loraConfigContent = buildLoraConfigContent(savedProfile);
                 }
 
                 $('#cia_custom_json_schema').val(schemaStr).trigger('input');
@@ -2664,16 +3090,16 @@ async function openCharacterReferenceEditor() {
                     <select id="cia_ref_profile_select" class="text_pole"></select>
                 </div>
                 <div class="cia-ref-toolbar">
-                    <button id="cia_ref_save_btn" class="cia-icon-btn" type="button" data-i18n="[title]Save current schema profile" title="Save current schema profile">
+                    <button id="cia_ref_save_btn" class="cia-icon-btn" type="button" data-i18n="[title]Save current character reference profile" title="Save current character reference profile">
                         <i class="fa-solid fa-floppy-disk"></i>
                     </button>
-                    <button id="cia_ref_rename_btn" class="cia-icon-btn" type="button" data-i18n="[title]Rename current schema profile" title="Rename current schema profile">
+                    <button id="cia_ref_rename_btn" class="cia-icon-btn" type="button" data-i18n="[title]Rename current character reference profile" title="Rename current character reference profile">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
-                    <button id="cia_ref_new_btn" class="cia-icon-btn" type="button" data-i18n="[title]Create new schema profile" title="Create new schema profile">
+                    <button id="cia_ref_new_btn" class="cia-icon-btn" type="button" data-i18n="[title]Create new character reference profile" title="Create new character reference profile">
                         <i class="fa-solid fa-plus"></i>
                     </button>
-                    <button id="cia_ref_delete_btn" class="cia-icon-btn" type="button" data-i18n="[title]Delete current schema profile" title="Delete current schema profile">
+                    <button id="cia_ref_delete_btn" class="cia-icon-btn" type="button" data-i18n="[title]Delete current character reference profile" title="Delete current character reference profile">
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
                     <button id="cia_ref_link_btn" class="cia-icon-btn" type="button" data-i18n="[title]Bind active profile to current context" title="Bind active profile to current context">
@@ -2687,11 +3113,11 @@ async function openCharacterReferenceEditor() {
 
             <div class="cia-ref-field">
                 <span data-i18n="System Prompt Template for Reference">System Prompt Template for Reference</span>
-                <textarea id="cia_ref_prompt_textarea" class="text_pole" rows="3" data-i18n="[placeholder]e.g., Character reference descriptors as follows..." placeholder="e.g., Character reference descriptors as follows..."></textarea>
+                <textarea id="cia_ref_prompt_textarea" class="text_pole cia-ref-prompt-textarea" data-i18n="[placeholder]e.g., Character reference descriptors as follows..." placeholder="e.g., Character reference descriptors as follows..."></textarea>
             </div>
             <div class="cia-ref-field">
                 <span data-i18n="Character Visual Baseline Descriptors">Character Visual Baseline Descriptors</span>
-                <textarea id="cia_ref_text_textarea" class="text_pole" rows="12" data-i18n="[placeholder]Enter hairstyle, eyes, attire details here, one per line..." placeholder="Enter hairstyle, eyes, attire details here, one per line..."></textarea>
+                <textarea id="cia_ref_text_textarea" class="text_pole cia-ref-descriptors-textarea" data-i18n="[placeholder]Enter hairstyle, eyes, attire details here, one per line..." placeholder="Enter hairstyle, eyes, attire details here, one per line..."></textarea>
             </div>
         </div>
     `));
@@ -2767,6 +3193,34 @@ async function openCharacterReferenceEditor() {
         loadSelectedProfile();
     });
 
+    const saveSelectedProfile = ({ notify = false } = {}) => {
+        const selectVal = content.find('#cia_ref_profile_select').val();
+        if (!selectVal) return false;
+
+        const prompt = String(content.find('#cia_ref_prompt_textarea').val() || '').trim() || DEFAULT_REFERENCE_PROMPT;
+        const text = String(content.find('#cia_ref_text_textarea').val() || '').trim();
+        const label = settings.characterReferences[selectVal]?.label || (selectVal === target.key ? target.label : selectVal);
+
+        settings.characterReferences[selectVal] = {
+            label,
+            prompt,
+            text,
+            updatedAt: new Date().toISOString(),
+        };
+
+        saveSettingsDebounced();
+        updateStatusDisplay();
+        populateSelect(selectVal);
+        loadSelectedProfile();
+        updateReferenceStatusUi();
+
+        if (notify) {
+            toastr.success(t`Profile "${label}" saved.`, 'Context Image Assistant');
+        }
+
+        return true;
+    };
+
     content.find('#cia_ref_rename_btn').on('click', async () => {
         const selectVal = content.find('#cia_ref_profile_select').val();
         if (!selectVal) return;
@@ -2798,31 +3252,7 @@ async function openCharacterReferenceEditor() {
     });
 
     content.find('#cia_ref_save_btn').on('click', () => {
-        const selectVal = content.find('#cia_ref_profile_select').val();
-        if (!selectVal) return;
-        const prompt = String(content.find('#cia_ref_prompt_textarea').val() || '').trim() || DEFAULT_REFERENCE_PROMPT;
-        const text = String(content.find('#cia_ref_text_textarea').val() || '').trim();
-
-        const label = settings.characterReferences[selectVal]?.label || (selectVal === target.key ? target.label : selectVal);
-
-        if (text) {
-            settings.characterReferences[selectVal] = {
-                label,
-                prompt,
-                text,
-                updatedAt: new Date().toISOString(),
-            };
-            toastr.success(t`Profile "${label}" saved.`, 'Context Image Assistant');
-        } else {
-            delete settings.characterReferences[selectVal];
-            toastr.info(t`Profile "${label}" cleared.`, 'Context Image Assistant');
-        }
-
-        saveSettingsDebounced();
-        updateStatusDisplay();
-        populateSelect(selectVal);
-        loadSelectedProfile();
-        updateReferenceStatusUi();
+        saveSelectedProfile({ notify: true });
     });
 
     content.find('#cia_ref_new_btn').on('click', async () => {
@@ -2912,34 +3342,13 @@ async function openCharacterReferenceEditor() {
         okButton: t`Save`,
         cancelButton: t`Cancel`,
         wide: true,
-        large: true,
         leftAlign: true,
         onClosing: async (p) => {
             if (p.result !== POPUP_RESULT.AFFIRMATIVE) {
                 return true;
             }
 
-            const selectVal = content.find('#cia_ref_profile_select').val();
-            if (selectVal) {
-                const prompt = String(content.find('#cia_ref_prompt_textarea').val() || '').trim() || DEFAULT_REFERENCE_PROMPT;
-                const text = String(content.find('#cia_ref_text_textarea').val() || '').trim();
-
-                const label = settings.characterReferences[selectVal]?.label || (selectVal === target.key ? target.label : selectVal);
-
-                if (text) {
-                    settings.characterReferences[selectVal] = {
-                        label,
-                        prompt,
-                        text,
-                        updatedAt: new Date().toISOString(),
-                    };
-                } else {
-                    delete settings.characterReferences[selectVal];
-                }
-            }
-
-            saveSettingsDebounced();
-            updateReferenceStatusUi();
+            saveSelectedProfile();
             return true;
         },
     });
@@ -3377,7 +3786,6 @@ async function openPromptRulesEditor() {
         okButton: t`Close`,
         cancelButton: null,
         wide: true,
-        large: true,
         leftAlign: true,
     });
     await popup.show();
@@ -3385,15 +3793,18 @@ async function openPromptRulesEditor() {
 
 async function requestImageCandidate(messageId, { force = false, manual = false, imageReference = null, autoGenerate = null, expectedSnapshot = null, silentIfStale = false } = {}) {
     const settings = ensureSettings();
-    const autoPipelineEnabled = Boolean(settings.enabled || settings.autoGenerate);
+    const editReference = isImageEditReference(imageReference) ? imageReference : null;
+    const autoAnalyzeEnabled = Boolean(settings.enabled);
     const initialTarget = resolveMessageTarget(messageId, expectedSnapshot);
     if (!initialTarget) {
         return;
     }
     messageId = initialTarget.messageId;
+    const requestKey = messageId;
     const message = initialTarget.message;
+    const taskSnapshot = expectedSnapshot || createMessageSnapshot(messageId);
     let shouldAutoGenerate = false;
-    if (!manual && !autoPipelineEnabled) {
+    if (!manual && !autoAnalyzeEnabled) {
         return;
     }
     if (activeRequests.has(messageId)) {
@@ -3414,13 +3825,13 @@ async function requestImageCandidate(messageId, { force = false, manual = false,
         rawResponse: '',
     });
     runtimeState.status = t`Analyzing #${messageId}`;
-    runtimeState.lastResult = imageReference ? t`Reconstructing prompt JSON from image...` : t`Requesting prompt JSON from LLM...`;
+    runtimeState.lastResult = editReference ? t`Reconstructing prompt JSON from image...` : t`Requesting prompt JSON from LLM...`;
     updateStatusUi();
     renderMessageControls(messageId);
 
     try {
-        const rawResponse = await callPlannerLlm(messageId, { imageReference, signal: plannerController.signal });
-        const latestTarget = resolveMessageTarget(messageId, expectedSnapshot);
+        const rawResponse = await callPlannerLlm(messageId, { imageReference: editReference, signal: plannerController.signal });
+        const latestTarget = resolveMessageTarget(messageId, taskSnapshot);
         if (!latestTarget) {
             setMessageState(messageId, {
                 status: 'cancelled',
@@ -3433,6 +3844,15 @@ async function requestImageCandidate(messageId, { force = false, manual = false,
             }
             return;
         }
+        if (latestTarget.messageId !== messageId) {
+            activeRequests.delete(messageId);
+            activeRequests.add(latestTarget.messageId);
+            plannerAbortControllers.delete(messageId);
+            plannerAbortControllers.set(latestTarget.messageId, plannerController);
+            if (cancelRequestedPlanner.delete(messageId)) {
+                cancelRequestedPlanner.add(latestTarget.messageId);
+            }
+        }
         messageId = latestTarget.messageId;
         const parsed = normalizeCandidate(parseCandidateJson(rawResponse));
         setMessageState(messageId, {
@@ -3440,14 +3860,14 @@ async function requestImageCandidate(messageId, { force = false, manual = false,
             error: '',
             rawResponse,
             parsed,
-            sourceMediaIndex: imageReference?.mediaIndex ?? null,
+            sourceMediaIndex: editReference?.mediaIndex ?? null,
             updatedAt: new Date().toISOString(),
         });
         writeCandidateJsonToMessage(messageId, parsed);
         runtimeState.status = 'ready';
-        runtimeState.lastResult = imageReference ? t`#${messageId} rebuilt candidate from image` : t`#${messageId} candidate generated`;
+        runtimeState.lastResult = editReference ? t`#${messageId} rebuilt candidate from image` : t`#${messageId} candidate generated`;
         shouldAutoGenerate = autoGenerate === null ? Boolean(settings.autoGenerate) : Boolean(autoGenerate);
-        toastr.success(imageReference ? t`Rebuilt image candidate based on reference image.` : t`Generated image candidate, button inserted into current message.`, 'Context Image Assistant');
+        toastr.success(editReference ? t`Rebuilt image candidate based on reference image.` : t`Generated image candidate, button inserted into current message.`, 'Context Image Assistant');
     } catch (error) {
         const cancelled = cancelRequestedPlanner.has(messageId) || isAbortLikeError(error);
         if (cancelled) {
@@ -3472,9 +3892,14 @@ async function requestImageCandidate(messageId, { force = false, manual = false,
             toastr.error(String(error?.message || error), 'Context Image Assistant');
         }
     } finally {
-        activeRequests.delete(messageId);
-        plannerAbortControllers.delete(messageId);
-        cancelRequestedPlanner.delete(messageId);
+        activeRequests.delete(requestKey);
+        plannerAbortControllers.delete(requestKey);
+        cancelRequestedPlanner.delete(requestKey);
+        if (messageId !== requestKey) {
+            activeRequests.delete(messageId);
+            plannerAbortControllers.delete(messageId);
+            cancelRequestedPlanner.delete(messageId);
+        }
         updateStatusUi();
         renderMessageControls(messageId);
         void saveChatWhenGeneratorIdle();
@@ -3510,8 +3935,9 @@ function cancelPlannerRequest(messageId) {
     const controller = plannerAbortControllers.get(messageId);
     if (controller) {
         controller.abort();
-    } else {
-        // generateRaw() does not accept an external signal; it listens this global stop event.
+    }
+    // generateRaw() does not accept an external signal; it listens this global stop event.
+    if (plannerUsesGenerateRaw()) {
         void eventSource.emit(event_types.GENERATION_STOPPED);
     }
     renderMessageControls(messageId);
@@ -3554,42 +3980,33 @@ async function saveChatWhenGeneratorIdle() {
 
 async function callPlannerLlm(messageId, { imageReference = null, signal = null } = {}) {
     const settings = ensureSettings();
-    settings.systemPrompt = getActiveSystemPrompt(settings);
-
-    let ragTags = '';
-    if (settings.promptMode === 'rag' && settings.enableDictionary && settings.activeDictionaryProfile) {
-        const lastMessage = chat[messageId];
-        const text = String(getMessageText(lastMessage) || '').trim();
-        if (text) {
-            ragTags = await queryDictionaryRag(text);
-        }
-    }
-
-    const userPrompt = buildUserPrompt(messageId, { imageReference, ragTags });
+    const userPrompt = buildUserPrompt(messageId, { imageReference });
+    // buildUserPrompt() reads normalized settings, so assemble dynamic system interfaces afterwards.
+    const systemPrompt = getPlannerSystemPrompt(settings);
 
     if (settings.providerMode === 'custom_proxy') {
-        return callCustomProxyLlm(settings, userPrompt, signal);
+        return callCustomProxyLlm(settings, systemPrompt, userPrompt, signal);
     }
 
     if (!settings.useStPromptPreset && main_api === 'openai') {
-        return callCurrentOpenAiLlm(settings, userPrompt, signal);
+        return callCurrentOpenAiLlm(settings, systemPrompt, userPrompt, signal);
     }
 
     return generateRaw({
         prompt: userPrompt,
-        systemPrompt: settings.systemPrompt,
+        systemPrompt,
         responseLength: settings.responseTokens,
         trimNames: false,
         jsonSchema: stripSchemaConstraints(getEffectiveJsonSchema(settings)),
     });
 }
 
-async function callCurrentOpenAiLlm(settings, userPrompt, signal = null) {
+async function callCurrentOpenAiLlm(settings, systemPrompt, userPrompt, signal = null) {
     const jsonSchema = stripSchemaConstraints(getEffectiveJsonSchema(settings));
     const data = await sendOpenAIRequest(
         'quiet',
         [
-            { role: 'system', content: substituteParams(settings.systemPrompt) },
+            { role: 'system', content: substituteParams(systemPrompt) },
             { role: 'user', content: substituteParams(userPrompt) },
         ],
         signal || new AbortController().signal,
@@ -3603,7 +4020,7 @@ async function callCurrentOpenAiLlm(settings, userPrompt, signal = null) {
     return text;
 }
 
-async function callCustomProxyLlm(settings, userPrompt, signal = null) {
+async function callCustomProxyLlm(settings, systemPrompt, userPrompt, signal = null) {
     if (!settings.customUrl) {
         throw new Error(t`Please fill in the custom endpoint URL first.`);
     }
@@ -3614,7 +4031,7 @@ async function callCustomProxyLlm(settings, userPrompt, signal = null) {
     const jsonSchema = stripSchemaConstraints(getEffectiveJsonSchema(settings));
     return callCustomChatCompletion({
         messages: [
-            { role: 'system', content: substituteParams(settings.systemPrompt) },
+            { role: 'system', content: substituteParams(systemPrompt) },
             { role: 'user', content: substituteParams(userPrompt) },
         ],
         model: settings.customModel,
@@ -3762,6 +4179,120 @@ function normalizeCustomUrl(url) {
         .replace(/\/$/, '');
 }
 
+function repairJsonStringEncoding(text) {
+    const source = String(text || '');
+    let result = '';
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < source.length; i++) {
+        const char = source[i];
+        if (!inString) {
+            result += char;
+            if (char === '"') inString = true;
+            continue;
+        }
+
+        if (escaped) {
+            if ('"\\/bfnrt'.includes(char)) {
+                result += `\\${char}`;
+            } else if (char === 'u' && /^[0-9a-fA-F]{4}$/.test(source.slice(i + 1, i + 5))) {
+                result += `\\u${source.slice(i + 1, i + 5)}`;
+                i += 4;
+            } else {
+                // Preserve an invalid JSON escape as a literal backslash plus its following character.
+                result += `\\\\${char}`;
+            }
+            escaped = false;
+            continue;
+        }
+
+        if (char === '\\') {
+            escaped = true;
+        } else if (char === '"') {
+            inString = false;
+            result += char;
+        } else if (char === '\n') {
+            result += '\\n';
+        } else if (char === '\r') {
+            result += '\\r';
+        } else if (char === '\t') {
+            result += '\\t';
+        } else if (char.charCodeAt(0) < 0x20) {
+            result += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        } else {
+            result += char;
+        }
+    }
+
+    if (escaped) {
+        result += '\\\\';
+    }
+    return result;
+}
+
+function extractLooseJsonStringField(text, fieldName) {
+    const source = String(text || '');
+    const escapedName = String(fieldName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const fieldRegex = new RegExp(`(?:^|[,{]\\s*|[\\r\\n]\\s*)["']${escapedName}["']\\s*:\\s*"`, 'gi');
+    const matches = [...source.matchAll(fieldRegex)];
+    for (let matchIndex = matches.length - 1; matchIndex >= 0; matchIndex--) {
+        const match = matches[matchIndex];
+        let value = '';
+        let escaped = false;
+        for (let i = match.index + match[0].length; i < source.length; i++) {
+            const char = source[i];
+            if (escaped) {
+                value += `\\${char}`;
+                escaped = false;
+                continue;
+            }
+            if (char === '\\') {
+                escaped = true;
+                continue;
+            }
+            if (char === '"') {
+                const remainder = source.slice(i + 1);
+                if (/^\s*(?:,|})/.test(remainder)) {
+                    try {
+                        return JSON.parse(repairJsonStringEncoding(`"${value}"`));
+                    } catch {
+                        return value;
+                    }
+                }
+                value += '\\"';
+                continue;
+            }
+            value += char;
+        }
+    }
+    return '';
+}
+
+function extractLooseCandidateFields(text) {
+    const prompt = extractLooseJsonStringField(text, 'prompt')
+        || extractLooseJsonStringField(text, 'positive_prompt')
+        || extractLooseJsonStringField(text, 'image_prompt');
+    if (!String(prompt || '').trim()) return null;
+
+    const candidate = {
+        prompt,
+        negative_prompt: extractLooseJsonStringField(text, 'negative_prompt')
+            || extractLooseJsonStringField(text, 'negative'),
+    };
+    const reasoning = extractLooseJsonStringField(text, 'reasoning');
+    if (reasoning) candidate.reasoning = reasoning;
+
+    const settings = ensureSettings();
+    for (const prop of getNumericSchemaProperties(settings)) {
+        const escapedKey = String(prop.key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const matches = [...String(text || '').matchAll(new RegExp(`(?:^|[,{]\\s*|[\\r\\n]\\s*)["']${escapedKey}["']\\s*:\\s*(-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?)`, 'g'))];
+        const match = matches.at(-1);
+        if (match) candidate[prop.key] = Number(match[1]);
+    }
+    return candidate;
+}
+
 function parseCandidateJson(text) {
     if (typeof text !== 'string') {
         const unwrapped = unwrapCandidateResponse(text);
@@ -3802,20 +4333,30 @@ function parseCandidateJson(text) {
     const uniqueAttempts = [...new Set(attempts.filter(Boolean))];
 
     for (const attempt of uniqueAttempts) {
-        try {
-            return unwrapCandidateResponse(JSON.parse(attempt));
-        } catch {
-            // Try fixing common JSON errors (loose parse)
+        const encodingRepaired = repairJsonStringEncoding(attempt);
+        const variants = [...new Set([attempt, encodingRepaired])];
+        for (const variant of variants) {
             try {
-                const fixed = attempt
+                return unwrapCandidateResponse(JSON.parse(variant));
+            } catch {
+                // Keep trying
+            }
+
+            try {
+                const fixed = repairJsonStringEncoding(variant
                     .replace(/,\s*([}\]])/g, '$1') // Trailing commas
                     .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":') // Unquoted or single-quoted keys
-                    .replace(/:\s*'((?:\\.|[^'])*?)'/g, ':"$1"'); // Single-quoted values
+                    .replace(/:\s*'((?:\\.|[^'])*?)'/g, ':"$1"')); // Single-quoted values
                 return unwrapCandidateResponse(JSON.parse(fixed));
             } catch {
                 // Keep trying
             }
         }
+    }
+
+    for (const source of sources) {
+        const looseCandidate = extractLooseCandidateFields(source);
+        if (looseCandidate) return looseCandidate;
     }
 
     throw new Error(t`LLM response is not valid JSON. Attempted multiple extraction strategies but all failed.`);
@@ -4292,7 +4833,9 @@ async function editCandidate(messageId) {
     const numericProps = getNumericSchemaProperties(settings);
     const isBusy = activeRequests.has(messageId) || activeGenerations.has(messageId);
     const parsedData = data.parsed || parseCandidateJson(data.rawResponse || '{}');
-    const value = JSON.stringify(parsedData, null, 2);
+    const displayData = { ...parsedData };
+    delete displayData.reasoning;
+    const value = JSON.stringify(displayData, null, 2);
 
     let loraSlidersHtml = '';
     for (const prop of numericProps) {
@@ -4335,7 +4878,10 @@ async function editCandidate(messageId) {
 
                 <!-- Right: Interactive Editor Form -->
                 <div style="flex: 1 1 50%; display: flex; flex-direction: column; gap: 10px; height: 100%; overflow-y: auto; padding-right: 4px;">
-                    <div style="font-size: 0.85em; opacity: 0.85; font-weight: 600;" data-i18n="Interactive Segmented Editor">Interactive Segmented Editor</div>
+                    <div style="font-size: 0.85em; opacity: 0.85; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+                        <span data-i18n="Interactive Segmented Editor">Interactive Segmented Editor</span>
+                        <button class="menu_button btn-view-reasoning" type="button" data-i18n="[title]View AI Reasoning" title="View AI Reasoning" style="margin: 0; padding: 2px 8px; font-size: 0.8em; height: auto; min-height: auto; width: auto;"><i class="fa-solid fa-brain"></i> <span data-i18n="Reasoning">Reasoning</span></button>
+                    </div>
 
                     <!-- Positive Prompt Card -->
                     <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px;">
@@ -4382,6 +4928,9 @@ async function editCandidate(messageId) {
         try {
             const current = parseCandidateJson(String(textareaJson.val() || '').trim());
             if (current && typeof current === 'object' && !Array.isArray(current)) {
+                if (parsedData && parsedData.reasoning !== undefined) {
+                    current.reasoning = parsedData.reasoning;
+                }
                 return { ...current };
             }
         } catch {
@@ -4415,7 +4964,9 @@ async function editCandidate(messageId) {
                 }
             });
 
-            textareaJson.val(JSON.stringify(obj, null, 2));
+            const displayObj = { ...obj };
+            delete displayObj.reasoning;
+            textareaJson.val(JSON.stringify(displayObj, null, 2));
         } catch (e) {
             console.error(e);
         }
@@ -4517,6 +5068,23 @@ async function editCandidate(messageId) {
         toastr.success(t`LoRA weights JSON copied to clipboard.`, 'Context Image Assistant');
     });
 
+    popupContent.find('.btn-view-reasoning').on('click', () => {
+        let text = t`No reasoning found in this generation.`;
+        if (parsedData && parsedData.reasoning) {
+            text = String(parsedData.reasoning).trim();
+        }
+        const innerContent = $(`
+            <div class="cia-prompt-popup-container" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 100% !important; margin-bottom: 10px;">
+                <div style="font-size: 1.1em; font-weight: 600; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 4px;">
+                    <i class="fa-solid fa-brain" style="color: #a5d3ff;"></i> <span data-i18n="AI Reasoning Process">AI Reasoning Process</span>
+                </div>
+                <div style="white-space: pre-wrap; font-family: monospace; font-size: 0.95em; line-height: 1.6; color: #dcdcdc; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 16px; max-height: 65vh; overflow-y: auto;"></div>
+            </div>
+        `);
+        innerContent.find('div').last().text(text);
+        new Popup(innerContent, POPUP_TYPE.TEXT, null, { okButton: t`Close`, wide: true }).show();
+    });
+
     const popup = new Popup(popupContent, POPUP_TYPE.TEXT, null, {
         okButton: isBusy ? t`Close` : t`Save & Close`,
         cancelButton: isBusy ? null : t`Cancel`,
@@ -4577,7 +5145,7 @@ async function rebuildCandidateFromImage(messageId, mediaIndex) {
     }
 
     const popupContent = $(applyLocale(`
-        <div style="display: flex; gap: 16px; width: 100%; height: 60vh; max-width: 100% !important;">
+        <div class="cia-rebuild-popup-wrapper">
             <!-- Left: Image Preview & Reference Info -->
             <div class="cia-rebuild-left-col" style="flex: 0 0 45%; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid rgba(255,255,255,0.08); padding-right: 16px; transition: opacity 0.3s ease;">
                 <div style="font-size: 0.85em; opacity: 0.85; font-weight: 600;" data-i18n="Reference Image">Reference Image</div>
@@ -4597,12 +5165,13 @@ async function rebuildCandidateFromImage(messageId, mediaIndex) {
                         <button type="button" class="menu_button cia-rebuild-mode-btn" data-mode="rewrite" style="margin: 0; padding: 2px 10px; font-size: 0.78em; height: auto; width: auto; min-height: 20px; border-radius: 4px; border: none; background: transparent; color: #fff; font-weight: normal; opacity: 0.7; transition: all 0.2s ease;" data-i18n="Rewrite Mode">Rewrite Mode</button>
                     </div>
                 </div>
-                <textarea class="cia-rebuild-instruction text_pole" style="flex-grow: 1; resize: none; font-size: 0.88em; padding: 10px; border-radius: 8px; line-height: 1.4;" placeholder="${escapeHtmlAttr(t('Enter your adjustment requests for this image (e.g. change background, change clothes, adjust expression). Leave empty to rebuild based on the original image and current context.'))}"></textarea>
+                <textarea class="cia-rebuild-instruction text_pole" style="flex-grow: 1; resize: none; font-size: 0.88em; padding: 10px; border-radius: 8px; line-height: 1.4;" placeholder="${escapeHtmlAttr(t('Enter the required edit instructions (e.g. change background, change clothes, adjust expression).'))}"></textarea>
             </div>
         </div>
     `));
 
     let currentMode = 'adjust';
+    let editInstructionDraft = '';
     popupContent.find('.cia-rebuild-mode-btn').on('click', function () {
         const mode = $(this).attr('data-mode');
         if (mode === currentMode) {
@@ -4633,11 +5202,18 @@ async function rebuildCandidateFromImage(messageId, mediaIndex) {
 
         const leftCol = popupContent.find('.cia-rebuild-left-col');
         if (currentMode === 'rewrite') {
+            editInstructionDraft = String(popupContent.find('.cia-rebuild-instruction').val() || '');
             leftCol.css('opacity', '0.4');
-            popupContent.find('.cia-rebuild-instruction').attr('placeholder', t('Enter your extra instructions for rewriting. Leave empty to perform a standard freshness generation based only on the chat context.'));
+            popupContent.find('.cia-rebuild-instruction')
+                .val('')
+                .prop('disabled', true)
+                .attr('placeholder', t('Replan uses the same request as normal image generation.'));
         } else {
             leftCol.css('opacity', '1');
-            popupContent.find('.cia-rebuild-instruction').attr('placeholder', t('Enter your adjustment requests for this image (e.g. change background, change clothes, adjust expression). Leave empty to rebuild based on the original image and current context.'));
+            popupContent.find('.cia-rebuild-instruction')
+                .prop('disabled', false)
+                .val(editInstructionDraft)
+                .attr('placeholder', t('Enter the required edit instructions (e.g. change background, change clothes, adjust expression).'));
         }
     });
 
@@ -4646,12 +5222,15 @@ async function rebuildCandidateFromImage(messageId, mediaIndex) {
         cancelButton: t('Cancel'),
         wide: true,
         wider: true,
-        large: true,
     });
 
     const result = await popup.show();
     if (result === POPUP_RESULT.AFFIRMATIVE) {
         const extraInstruction = String(popupContent.find('.cia-rebuild-instruction').val() || '').trim();
+        if (currentMode === 'adjust' && !extraInstruction) {
+            toastr.warning(t`Edit mode requires user instructions.`, 'Context Image Assistant');
+            return;
+        }
         imageReference.extraInstruction = extraInstruction;
         imageReference.mode = currentMode;
 
@@ -4689,7 +5268,9 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
         return;
     }
     messageId = initialTarget.messageId;
+    const generationKey = messageId;
     const message = initialTarget.message;
+    const taskSnapshot = expectedSnapshot || createMessageSnapshot(messageId);
     const data = message?.extra?.[EXTRA_KEY];
     if (!data?.parsed?.prompt || activeGenerations.has(messageId)) {
         return;
@@ -4723,7 +5304,7 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
 
     try {
         const result = await generateComfyImage(data.parsed, imageController.signal);
-        const latestTarget = resolveMessageTarget(messageId, expectedSnapshot);
+        const latestTarget = resolveMessageTarget(messageId, taskSnapshot);
         if (!latestTarget) {
             setMessageState(messageId, {
                 status: 'ready',
@@ -4736,6 +5317,15 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
             }
             return;
         }
+        if (latestTarget.messageId !== messageId) {
+            activeGenerations.delete(messageId);
+            activeGenerations.add(latestTarget.messageId);
+            imageAbortControllers.delete(messageId);
+            imageAbortControllers.set(latestTarget.messageId, imageController);
+            if (cancelRequestedImage.delete(messageId)) {
+                cancelRequestedImage.add(latestTarget.messageId);
+            }
+        }
         messageId = latestTarget.messageId;
         attachImageToMessage(messageId, data.parsed, result);
         setMessageState(messageId, {
@@ -4745,7 +5335,10 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
         });
         runtimeState.status = 'done';
         runtimeState.lastResult = t`#${messageId} image generated`;
-        activeGenerations.delete(messageId);
+        activeGenerations.delete(generationKey);
+        if (messageId !== generationKey) {
+            activeGenerations.delete(messageId);
+        }
         updateStatusUi();
         renderMessageControls(messageId);
         toastr.success(t`Image inserted into current message.`, 'Context Image Assistant');
@@ -4774,9 +5367,14 @@ async function generateImageForMessage(messageId, { expectedSnapshot = null, sil
             toastr.error(String(error?.message || error), 'Context Image Assistant');
         }
     } finally {
-        activeGenerations.delete(messageId);
-        imageAbortControllers.delete(messageId);
-        cancelRequestedImage.delete(messageId);
+        activeGenerations.delete(generationKey);
+        imageAbortControllers.delete(generationKey);
+        cancelRequestedImage.delete(generationKey);
+        if (messageId !== generationKey) {
+            activeGenerations.delete(messageId);
+            imageAbortControllers.delete(messageId);
+            cancelRequestedImage.delete(messageId);
+        }
         updateStatusUi();
         renderMessageControls(messageId);
     }
@@ -4937,6 +5535,18 @@ function getOrCreateMessageCiaId(message) {
     return message.extra.cia_msg_id;
 }
 
+let galleryDataRevision = 0;
+let gallerySnapshotCache = null;
+const favoriteArchiveCopyTasks = new Map();
+const favoriteMutationQueues = new Map();
+const favoriteSourceHashCache = new Map();
+let favoriteArchiveNormalizationPending = false;
+
+function invalidateGalleryData() {
+    galleryDataRevision++;
+    gallerySnapshotCache = null;
+}
+
 function getRecycleBin() {
     if (!chat_metadata || typeof chat_metadata !== 'object') {
         return [];
@@ -4955,6 +5565,37 @@ function getRecycleBin() {
     return chat_metadata[RECYCLE_BIN_KEY];
 }
 
+function getFavoriteArchive() {
+    if (!chat_metadata || typeof chat_metadata !== 'object') {
+        return [];
+    }
+    if (!Array.isArray(chat_metadata[FAVORITE_ARCHIVE_KEY])) {
+        chat_metadata[FAVORITE_ARCHIVE_KEY] = [];
+    }
+    const archive = chat_metadata[FAVORITE_ARCHIVE_KEY];
+    for (const item of archive) {
+        if (!item || typeof item !== 'object') continue;
+        const sourceKey = getFavoriteArchiveItemKey(item);
+        if (sourceKey && item.sourceKey !== sourceKey) {
+            item.sourceKey = sourceKey;
+            favoriteArchiveNormalizationPending = true;
+        }
+        if (String(item.sourceUrl || '').startsWith('data:')) {
+            delete item.sourceUrl;
+            favoriteArchiveNormalizationPending = true;
+        }
+    }
+    return archive;
+}
+
+function saveFavoriteArchive(archive) {
+    if (!chat_metadata || typeof chat_metadata !== 'object') {
+        return;
+    }
+    chat_metadata[FAVORITE_ARCHIVE_KEY] = Array.isArray(archive) ? archive : [];
+    invalidateGalleryData();
+}
+
 function saveRecycleBin(bin) {
     if (!chat_metadata || typeof chat_metadata !== 'object') {
         return;
@@ -4963,6 +5604,7 @@ function saveRecycleBin(bin) {
     if (chat?.[0]?.extra) {
         delete chat[0].extra[RECYCLE_BIN_KEY];
     }
+    invalidateGalleryData();
 }
 
 function getGalleryUiState() {
@@ -4985,6 +5627,39 @@ function getGalleryUiState() {
     return state;
 }
 
+let galleryFilterRenderTimer = null;
+let galleryUiSaveTimer = null;
+
+function scheduleGalleryFilterRender() {
+    clearTimeout(galleryFilterRenderTimer);
+    galleryFilterRenderTimer = setTimeout(() => {
+        galleryFilterRenderTimer = null;
+        renderGalleryList();
+    }, 150);
+}
+
+function scheduleGalleryUiStateSave() {
+    clearTimeout(galleryUiSaveTimer);
+    const scheduledChatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+    galleryUiSaveTimer = setTimeout(() => {
+        galleryUiSaveTimer = null;
+        const currentChatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+        if (currentChatId !== scheduledChatId) {
+            return;
+        }
+        void saveChatConditional().catch(error => {
+            console.warn('[context-image-assistant] failed to save gallery UI state', error);
+        });
+    }, 800);
+}
+
+function clearPendingGalleryUiWork() {
+    clearTimeout(galleryFilterRenderTimer);
+    clearTimeout(galleryUiSaveTimer);
+    galleryFilterRenderTimer = null;
+    galleryUiSaveTimer = null;
+}
+
 function applyGalleryUiStateToFilters() {
     const state = getGalleryUiState();
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).prop('checked', state.favoritesOnly);
@@ -4995,26 +5670,32 @@ function saveGalleryFilterStateFromUi() {
     const state = getGalleryUiState();
     state.favoritesOnly = !!$(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).prop('checked');
     state.floorFilter = String($(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).val() || '');
-    void saveChatConditional();
+    scheduleGalleryUiStateSave();
 }
 
 function saveGallerySortDirection(direction) {
     const state = getGalleryUiState();
     state.sortDirection = direction === 'desc' ? 'desc' : 'asc';
-    void saveChatConditional();
+    scheduleGalleryUiStateSave();
 }
 
 function sortGalleryItemsForLargeGrid(items) {
     const direction = getGalleryUiState().sortDirection;
     const multiplier = direction === 'desc' ? -1 : 1;
     return [...items].sort((a, b) => {
-        const floorA = Number.isInteger(a.floorNumber) ? a.floorNumber : Number.MAX_SAFE_INTEGER;
-        const floorB = Number.isInteger(b.floorNumber) ? b.floorNumber : Number.MAX_SAFE_INTEGER;
+        const hasFloorA = Number.isInteger(a.floorNumber);
+        const hasFloorB = Number.isInteger(b.floorNumber);
+        if (hasFloorA !== hasFloorB) return hasFloorA ? -1 : 1;
+        const floorA = hasFloorA ? a.floorNumber : 0;
+        const floorB = hasFloorB ? b.floorNumber : 0;
         if (floorA !== floorB) {
             return (floorA - floorB) * multiplier;
         }
-        const mediaA = Number.isInteger(a.mediaIndex) ? a.mediaIndex : Number.MAX_SAFE_INTEGER;
-        const mediaB = Number.isInteger(b.mediaIndex) ? b.mediaIndex : Number.MAX_SAFE_INTEGER;
+        const hasMediaA = Number.isInteger(a.mediaIndex);
+        const hasMediaB = Number.isInteger(b.mediaIndex);
+        if (hasMediaA !== hasMediaB) return hasMediaA ? -1 : 1;
+        const mediaA = hasMediaA ? a.mediaIndex : 0;
+        const mediaB = hasMediaB ? b.mediaIndex : 0;
         return (mediaA - mediaB) * multiplier;
     });
 }
@@ -5029,6 +5710,244 @@ function getRecycleItemKey(item) {
         String(item.deletedAt || ''),
         String(item.title || ''),
     ].join('\u001f');
+}
+
+function getFavoriteSourceKey(sourceCiaMsgId, sourceUrl) {
+    if (!sourceCiaMsgId || !sourceUrl) {
+        return '';
+    }
+    const normalizedUrl = String(sourceUrl);
+    let sourceHash = favoriteSourceHashCache.get(normalizedUrl);
+    if (!sourceHash) {
+        sourceHash = getStringHash(normalizedUrl);
+        favoriteSourceHashCache.set(normalizedUrl, sourceHash);
+    }
+    return `${sourceCiaMsgId}\u001f${sourceHash}`;
+}
+
+function getFavoriteArchiveItemKey(item) {
+    if (item?.sourceKey) {
+        return String(item.sourceKey);
+    }
+    if (String(item?.id || '').startsWith('fav:')) {
+        return String(item.id).slice(4);
+    }
+    return getFavoriteSourceKey(item?.sourceCiaMsgId || item?.cia_msg_id, item?.sourceUrl || item?.url);
+}
+
+function cloneAttachmentMetadata(attachment) {
+    return {
+        ...(attachment?.[EXTRA_KEY] || {}),
+    };
+}
+
+async function imageUrlToDataUrl(url) {
+    const value = String(url || '');
+    if (!value) {
+        return '';
+    }
+    if (value.startsWith('data:')) {
+        return value;
+    }
+    const response = await fetch(value);
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    return await getBase64Async(blob);
+}
+
+function isFavoriteSourceCurrentlyFavorited(sourceKey) {
+    if (!sourceKey) return false;
+    for (const message of chat) {
+        const ciaMsgId = String(message?.extra?.cia_msg_id || '');
+        const media = Array.isArray(message?.extra?.media) ? message.extra.media : [];
+        for (const attachment of media) {
+            if (attachment?.[EXTRA_KEY]?.isFavorited && getFavoriteSourceKey(ciaMsgId, attachment.url) === sourceKey) {
+                return true;
+            }
+        }
+    }
+    for (const item of getRecycleBin()) {
+        if (item?.isFavorited && getFavoriteSourceKey(item.cia_msg_id, item.url) === sourceKey) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function ensureFavoriteArchiveCopy(item, attachment, message) {
+    const sourceCiaMsgId = message
+        ? getOrCreateMessageCiaId(message)
+        : String(item?.cia_msg_id || item?.sourceCiaMsgId || '');
+    const sourceUrl = String(attachment?.url || item?.url || '');
+    const sourceKey = getFavoriteSourceKey(sourceCiaMsgId, sourceUrl);
+    if (!sourceKey) {
+        return null;
+    }
+
+    const runningTask = favoriteArchiveCopyTasks.get(sourceKey);
+    if (runningTask) {
+        return await runningTask;
+    }
+
+    const task = ensureFavoriteArchiveCopyUnlocked(item, attachment, sourceCiaMsgId, sourceUrl, sourceKey);
+    favoriteArchiveCopyTasks.set(sourceKey, task);
+    try {
+        return await task;
+    } finally {
+        if (favoriteArchiveCopyTasks.get(sourceKey) === task) {
+            favoriteArchiveCopyTasks.delete(sourceKey);
+        }
+    }
+}
+
+async function ensureFavoriteArchiveCopyUnlocked(item, attachment, sourceCiaMsgId, sourceUrl, sourceKey) {
+
+    const archive = getFavoriteArchive();
+    const existing = archive.find(entry => getFavoriteArchiveItemKey(entry) === sourceKey);
+    if (existing) {
+        existing.isFavorited = true;
+        existing.sourceMediaIndex = Number.isInteger(item?.mediaIndex) ? item.mediaIndex : existing.sourceMediaIndex;
+        existing.originalFloorNumber = Number.isInteger(item?.floorNumber) ? item.floorNumber : existing.originalFloorNumber;
+        existing.updatedAt = new Date().toISOString();
+        saveFavoriteArchive(archive);
+        return existing;
+    }
+
+    const archivedUrl = await imageUrlToDataUrl(sourceUrl);
+    if (!isFavoriteSourceCurrentlyFavorited(sourceKey)) {
+        return null;
+    }
+    const duplicate = getFavoriteArchive().find(entry => getFavoriteArchiveItemKey(entry) === sourceKey);
+    if (duplicate) {
+        return duplicate;
+    }
+    const entry = {
+        id: `fav:${sourceKey}`,
+        sourceKey,
+        sourceCiaMsgId,
+        sourceMediaIndex: Number.isInteger(item?.mediaIndex) ? item.mediaIndex : null,
+        ...(sourceUrl.startsWith('data:') ? {} : { sourceUrl }),
+        url: archivedUrl,
+        title: attachment?.title || item?.title || '',
+        negative: attachment?.negative || item?.negative || '',
+        generation_type: attachment?.generation_type || MODULE_NAME,
+        source: attachment?.source || MEDIA_SOURCE.GENERATED,
+        [EXTRA_KEY]: cloneAttachmentMetadata(attachment),
+        originalFloorNumber: Number.isInteger(item?.floorNumber) ? item.floorNumber : null,
+        archivedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isFavorited: true,
+    };
+    entry[EXTRA_KEY].isFavorited = true;
+    const latestArchive = getFavoriteArchive();
+    latestArchive.push(entry);
+    saveFavoriteArchive(latestArchive);
+    return entry;
+}
+
+function removeFavoriteArchiveCopy(item) {
+    const archive = getFavoriteArchive();
+    const sourceKey = item?.type === 'favorite_archive'
+        ? getFavoriteArchiveItemKey(item)
+        : getFavoriteSourceKey(item?.cia_msg_id || item?.sourceCiaMsgId, item?.sourceUrl || item?.url);
+    const nextArchive = sourceKey
+        ? archive.filter(entry => getFavoriteArchiveItemKey(entry) !== sourceKey)
+        : archive;
+    if (nextArchive.length !== archive.length) {
+        saveFavoriteArchive(nextArchive);
+        return true;
+    }
+    return false;
+}
+
+let favoriteArchiveMigrationRunning = false;
+let lastFavoriteArchiveMigrationSignature = '';
+
+async function migrateExistingFavoriteArchiveCopies() {
+    if (favoriteArchiveMigrationRunning || !chat_metadata || typeof chat_metadata !== 'object') {
+        return;
+    }
+
+    favoriteArchiveMigrationRunning = true;
+    let createdCount = 0;
+    const migrationChatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+    const isCurrentMigrationChat = () => {
+        const currentChatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+        return currentChatId === migrationChatId;
+    };
+
+    try {
+        const snapshot = getGallerySnapshot();
+        const candidates = [
+            ...snapshot.activeItems.filter(item => item.isFavorited),
+            ...snapshot.recycleItems.filter(item => item.isFavorited),
+        ];
+        const candidateKeys = candidates.map(item => getFavoriteSourceKey(item.cia_msg_id || item.sourceCiaMsgId, item.url)).filter(Boolean).sort();
+        const signature = `${candidateKeys.length}:${getStringHash(candidateKeys.join('\u001e'))}`;
+        const migrationState = chat_metadata[FAVORITE_ARCHIVE_MIGRATION_KEY];
+        if (signature === lastFavoriteArchiveMigrationSignature || migrationState?.signature === signature) {
+            if (favoriteArchiveNormalizationPending) {
+                favoriteArchiveNormalizationPending = false;
+                await saveChatWhenGeneratorIdle();
+            }
+            return;
+        }
+
+        const archiveKeys = new Set(getFavoriteArchive().map(getFavoriteArchiveItemKey).filter(Boolean));
+        for (const item of candidates) {
+            if (!isCurrentMigrationChat()) return;
+            const sourceKey = getFavoriteSourceKey(item.cia_msg_id, item.url);
+            if (!sourceKey || archiveKeys.has(sourceKey)) {
+                continue;
+            }
+            try {
+                const message = item.type === 'active' ? chat[item.msgId] : null;
+                const attachment = item.type === 'active'
+                    ? message?.extra?.media?.[item.mediaIndex]
+                    : {
+                        url: item.url,
+                        title: item.title,
+                        negative: item.negative,
+                        generation_type: MODULE_NAME,
+                        source: MEDIA_SOURCE.GENERATED,
+                        [EXTRA_KEY]: item[EXTRA_KEY] || {},
+                    };
+                const archived = await ensureFavoriteArchiveCopy(item, attachment, message);
+                if (!isCurrentMigrationChat()) return;
+                if (archived) {
+                    archiveKeys.add(sourceKey);
+                    createdCount++;
+                }
+            } catch (error) {
+                console.warn('[context-image-assistant] failed to migrate favorite image copy', error);
+            }
+        }
+
+        if (!isCurrentMigrationChat()) return;
+        lastFavoriteArchiveMigrationSignature = signature;
+        chat_metadata[FAVORITE_ARCHIVE_MIGRATION_KEY] = {
+            version: 1,
+            signature,
+            checkedAt: new Date().toISOString(),
+        };
+
+        const shouldSaveMigration = createdCount > 0 || favoriteArchiveNormalizationPending;
+        favoriteArchiveNormalizationPending = false;
+        if (shouldSaveMigration) {
+            await saveChatWhenGeneratorIdle();
+        }
+        if (createdCount > 0) {
+            if (isImageManagementTabActive()) {
+                renderGalleryList();
+                renderRecycleBinList();
+            }
+            toastr.success(t`Backfilled ${createdCount} favorite image copies.`, 'Context Image Assistant');
+        }
+    } finally {
+        favoriteArchiveMigrationRunning = false;
+    }
 }
 
 function findRecycleBinIndex(reference) {
@@ -5114,9 +6033,7 @@ function isImageManagementTabActive() {
 }
 
 let lastChatId = null;
-let lastChatLength = 0;
-let lastActiveImagesCount = 0;
-let lastRecycledImagesCount = 0;
+let lastRenderedGalleryRevision = -1;
 
 function refreshImageManagementViews({ force = false } = {}) {
     if (!force && !isImageManagementTabActive()) {
@@ -5124,31 +6041,24 @@ function refreshImageManagementViews({ force = false } = {}) {
     }
 
     const currentChatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
-    const currentChatLength = Array.isArray(chat) ? chat.length : 0;
-    const currentActiveCount = getActiveGalleryImages().length;
-    const currentRecycledCount = getRecycleBin().length;
-
     const hasChatChanged = force ||
         currentChatId !== lastChatId ||
-        currentChatLength !== lastChatLength ||
-        currentActiveCount !== lastActiveImagesCount ||
-        currentRecycledCount !== lastRecycledImagesCount;
+        galleryDataRevision !== lastRenderedGalleryRevision;
 
     if (hasChatChanged) {
         lastChatId = currentChatId;
-        lastChatLength = currentChatLength;
-        lastActiveImagesCount = currentActiveCount;
-        lastRecycledImagesCount = currentRecycledCount;
+        lastRenderedGalleryRevision = galleryDataRevision;
 
         applyGalleryUiStateToFilters();
         renderGalleryList();
         renderRecycleBinList();
+        void migrateExistingFavoriteArchiveCopies();
     }
 }
 
 async function deletePhysicalImage(url) {
-    if (!url || typeof url !== 'string' || url.startsWith('data:')) {
-        return;
+    if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('/api/chats/media/')) {
+        return true;
     }
     try {
         const response = await fetch('/api/images/delete', {
@@ -5158,10 +6068,43 @@ async function deletePhysicalImage(url) {
         });
         if (response.ok) {
             console.log(`[context-image-assistant] physically deleted image: ${url}`);
+            return true;
         }
+        console.warn(`[context-image-assistant] failed to delete physical image: HTTP ${response.status}`);
     } catch (e) {
         console.error(`[context-image-assistant] failed to delete physical file: ${url}`, e);
     }
+    return false;
+}
+
+function hasOtherImageReferences(url, ignoredRecycleKeys = new Set()) {
+    const normalizedUrl = String(url || '');
+    if (!normalizedUrl || normalizedUrl.startsWith('data:')) {
+        return false;
+    }
+    for (const message of chat) {
+        const media = Array.isArray(message?.extra?.media) ? message.extra.media : [];
+        if (media.some(attachment => String(attachment?.url || '') === normalizedUrl)) {
+            return true;
+        }
+    }
+    if (getFavoriteArchive().some(item => String(item?.url || '') === normalizedUrl)) {
+        return true;
+    }
+    return getRecycleBin().some(item =>
+        !ignoredRecycleKeys.has(getRecycleItemKey(item)) && String(item?.url || '') === normalizedUrl,
+    );
+}
+
+async function deletePhysicalImageIfUnreferenced(url, ignoredRecycleKeys = new Set()) {
+    if (hasOtherImageReferences(url, ignoredRecycleKeys)) {
+        return true;
+    }
+    const deleted = await deletePhysicalImage(url);
+    if (deleted) {
+        favoriteSourceHashCache.delete(String(url || ''));
+    }
+    return deleted;
 }
 
 async function deleteRecycleItem(reference) {
@@ -5169,9 +6112,15 @@ async function deleteRecycleItem(reference) {
     const index = findRecycleBinIndex(reference);
     const item = bin[index];
     if (!item) return;
+    const recycleKey = getRecycleItemKey(item);
 
-    await deletePhysicalImage(item.url);
-    bin.splice(index, 1);
+    if (!await deletePhysicalImageIfUnreferenced(item.url, new Set([recycleKey]))) {
+        toastr.error(t`Image could not be deleted and remains in the Recycle Bin.`, 'Context Image Assistant');
+        return;
+    }
+    const currentIndex = findRecycleBinIndex({ recycleKey });
+    if (currentIndex === -1) return;
+    bin.splice(currentIndex, 1);
     saveRecycleBin(bin);
     await saveChatWhenGeneratorIdle();
     renderRecycleBinList();
@@ -5211,6 +6160,7 @@ async function restoreRecycleItem(reference) {
     message.extra.media_display = MEDIA_DISPLAY.GALLERY;
     message.extra.media_index = message.extra.media.length - 1;
     message.extra.inline_image = true;
+    invalidateGalleryData();
 
     bin.splice(index, 1);
     saveRecycleBin(bin);
@@ -5233,11 +6183,24 @@ async function restoreRecycleItem(reference) {
 
 async function recycleActiveGalleryItem(item) {
     if (item.type !== 'active') return;
-    const message = chat[item.msgId];
+    const message = chat.find(msg => item.cia_msg_id && msg?.extra?.cia_msg_id === item.cia_msg_id) || chat[item.msgId];
     if (!message || !message.extra || !Array.isArray(message.extra.media)) return;
 
-    const attachment = message.extra.media[item.mediaIndex];
+    const expectedUrl = String(item.sourceUrl || item.url || '');
+    const attachment = message.extra.media.find(media => String(media?.url || '') === expectedUrl)
+        || (!expectedUrl ? message.extra.media[item.mediaIndex] : null);
     if (!attachment) return;
+
+    if (attachment[EXTRA_KEY]?.isFavorited) {
+        try {
+            await ensureFavoriteArchiveCopy(item, attachment, message);
+        } catch (error) {
+            toastr.warning(t`Favorite image copy could not be saved before recycling: ${String(error?.message || error)}`, 'Context Image Assistant');
+        }
+    }
+
+    const currentMediaIndex = message.extra.media.indexOf(attachment);
+    if (currentMediaIndex === -1) return;
 
     const bin = getRecycleBin();
     const ciaMsgId = getOrCreateMessageCiaId(message);
@@ -5256,8 +6219,10 @@ async function recycleActiveGalleryItem(item) {
 
     saveRecycleBin(bin);
 
+    const previousMediaIndex = Number.isInteger(message.extra.media_index) ? message.extra.media_index : 0;
+
     // Remove from message media
-    message.extra.media.splice(item.mediaIndex, 1);
+    message.extra.media.splice(currentMediaIndex, 1);
 
     // Adjust media_index
     if (message.extra.media.length === 0) {
@@ -5266,7 +6231,13 @@ async function recycleActiveGalleryItem(item) {
         delete message.extra.media_display;
         delete message.extra.inline_image;
     } else {
-        message.extra.media_index = Math.max(0, message.extra.media_index - 1);
+        if (previousMediaIndex > currentMediaIndex) {
+            message.extra.media_index = previousMediaIndex - 1;
+        } else if (previousMediaIndex === currentMediaIndex) {
+            message.extra.media_index = Math.min(currentMediaIndex, message.extra.media.length - 1);
+        } else {
+            message.extra.media_index = Math.min(previousMediaIndex, message.extra.media.length - 1);
+        }
     }
 
     await saveChatWhenGeneratorIdle();
@@ -5305,48 +6276,88 @@ async function recycleActiveGalleryItem(item) {
     toastr.success(t`Image moved to recycle bin.`, 'Context Image Assistant');
 }
 
-function getActiveGalleryImages() {
-    const items = [];
+function getGallerySnapshot() {
+    const chatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+    if (gallerySnapshotCache?.revision === galleryDataRevision && gallerySnapshotCache.chatId === chatId) {
+        return gallerySnapshotCache;
+    }
 
+    const messageIndexByCiaId = new Map();
+    for (let msgId = 0; msgId < chat.length; msgId++) {
+        const ciaMsgId = String(chat[msgId]?.extra?.cia_msg_id || '');
+        if (ciaMsgId) messageIndexByCiaId.set(ciaMsgId, msgId);
+    }
+
+    const activeItems = [];
+    const activeKeys = new Set();
     for (let msgId = 0; msgId < chat.length; msgId++) {
         const message = chat[msgId];
-        if (!message || !message.extra || !Array.isArray(message.extra.media)) {
-            continue;
-        }
-        const media = message.extra.media;
-        for (let mediaIdx = 0; mediaIdx < media.length; mediaIdx++) {
-            const attachment = media[mediaIdx];
-            if (isRebuildableImageAttachment(attachment)) {
-                items.push({
-                    id: `active:${msgId}:${mediaIdx}`,
-                    type: 'active',
-                    msgId: msgId,
-                    floorNumber: msgId + 1,
-                    mediaIndex: mediaIdx,
-                    url: attachment.url,
-                    title: attachment.title,
-                    negative: attachment.negative || '',
-                    [EXTRA_KEY]: attachment[EXTRA_KEY] || {},
-                    isFavorited: !!attachment[EXTRA_KEY]?.isFavorited,
-                    createdAt: attachment[EXTRA_KEY]?.updatedAt || message.send_date || '',
-                });
+        const media = Array.isArray(message?.extra?.media) ? message.extra.media : [];
+        let ciaMsgId = String(message?.extra?.cia_msg_id || '');
+        for (let mediaIndex = 0; mediaIndex < media.length; mediaIndex++) {
+            const attachment = media[mediaIndex];
+            if (!isRebuildableImageAttachment(attachment)) continue;
+            if (!ciaMsgId && attachment?.[EXTRA_KEY]?.isFavorited) {
+                ciaMsgId = getOrCreateMessageCiaId(message);
+                messageIndexByCiaId.set(ciaMsgId, msgId);
             }
+            const sourceKey = getFavoriteSourceKey(ciaMsgId, attachment.url);
+            if (sourceKey) activeKeys.add(sourceKey);
+            activeItems.push({
+                id: `active:${msgId}:${mediaIndex}`,
+                type: 'active',
+                msgId,
+                floorNumber: msgId + 1,
+                mediaIndex,
+                cia_msg_id: ciaMsgId,
+                sourceCiaMsgId: ciaMsgId,
+                sourceUrl: attachment.url,
+                favoriteSourceKey: sourceKey,
+                url: attachment.url,
+                title: attachment.title,
+                negative: attachment.negative || '',
+                [EXTRA_KEY]: attachment[EXTRA_KEY] || {},
+                isFavorited: !!attachment[EXTRA_KEY]?.isFavorited,
+                createdAt: attachment[EXTRA_KEY]?.updatedAt || message.send_date || '',
+            });
         }
     }
 
-    return items;
-}
+    const favoriteItems = [];
+    const favoriteBySourceKey = new Map();
+    const archive = getFavoriteArchive();
+    for (let archiveIndex = 0; archiveIndex < archive.length; archiveIndex++) {
+        const item = archive[archiveIndex];
+        const sourceKey = getFavoriteArchiveItemKey(item);
+        if (!sourceKey) continue;
+        favoriteBySourceKey.set(sourceKey, item);
+        if (!item?.isFavorited || activeKeys.has(sourceKey)) continue;
+        const originalMsgIndex = messageIndexByCiaId.get(String(item.sourceCiaMsgId || '')) ?? -1;
+        favoriteItems.push({
+            id: `favorite_archive:${archiveIndex}:${getStringHash(sourceKey)}`,
+            type: 'favorite_archive',
+            archiveIndex,
+            favoriteSourceKey: sourceKey,
+            msgId: originalMsgIndex,
+            floorNumber: Number.isInteger(item.originalFloorNumber) ? item.originalFloorNumber : (originalMsgIndex >= 0 ? originalMsgIndex + 1 : null),
+            mediaIndex: Number.isInteger(item.sourceMediaIndex) ? item.sourceMediaIndex : null,
+            sourceCiaMsgId: item.sourceCiaMsgId,
+            sourceUrl: item.sourceUrl || '',
+            url: item.url,
+            title: item.title,
+            negative: item.negative || '',
+            [EXTRA_KEY]: item[EXTRA_KEY] || {},
+            isFavorited: true,
+            createdAt: item.archivedAt || item.updatedAt || '',
+        });
+    }
 
-function getRecycleGalleryImages() {
-    const items = [];
-    const bin = getRecycleBin();
-    for (let binIdx = 0; binIdx < bin.length; binIdx++) {
-        const item = bin[binIdx];
-        const originalMsgIndex = chat.findIndex(msg => msg?.extra?.cia_msg_id === item.cia_msg_id);
-        items.push({
-            id: `recycle:${binIdx}`,
+    const recycleItems = getRecycleBin().map((item, binIndex) => {
+        const originalMsgIndex = messageIndexByCiaId.get(String(item.cia_msg_id || '')) ?? -1;
+        return {
+            id: `recycle:${binIndex}`,
             type: 'recycle',
-            binIndex: binIdx,
+            binIndex,
             recycleKey: getRecycleItemKey(item),
             msgId: originalMsgIndex,
             floorNumber: originalMsgIndex >= 0 ? originalMsgIndex + 1 : null,
@@ -5357,14 +6368,40 @@ function getRecycleGalleryImages() {
             isFavorited: !!item.isFavorited,
             createdAt: item.deletedAt || '',
             cia_msg_id: item.cia_msg_id,
-        });
-    }
+        };
+    });
 
-    return items;
+    gallerySnapshotCache = {
+        chatId,
+        revision: galleryDataRevision,
+        messageIndexByCiaId,
+        favoriteBySourceKey,
+        activeItems,
+        favoriteItems,
+        recycleItems,
+        galleryItems: [...activeItems, ...favoriteItems],
+    };
+    return gallerySnapshotCache;
+}
+
+function getActiveGalleryImages() {
+    return getGallerySnapshot().activeItems;
+}
+
+function getFavoriteArchiveGalleryImages() {
+    return getGallerySnapshot().favoriteItems;
+}
+
+function getGalleryImages() {
+    return getGallerySnapshot().galleryItems;
+}
+
+function getRecycleGalleryImages() {
+    return getGallerySnapshot().recycleItems;
 }
 
 function getFilteredGalleryImages() {
-    const all = getActiveGalleryImages();
+    const all = getGalleryImages();
     const showOnlyFav = !!$(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_fav`).prop('checked');
     const floorFilter = String($(`#${PANEL_CONTAINER_ID} #cia_gallery_filter_floor`).val() || '').trim();
 
@@ -5391,15 +6428,58 @@ function getFilteredRecycleImages() {
     return getRecycleGalleryImages();
 }
 
-async function toggleGalleryFavorite(item) {
-    if (item.type === 'active') {
+function getFavoriteMutationKey(item) {
+    if (item?.favoriteSourceKey) return item.favoriteSourceKey;
+    if (item?.type === 'active') {
         const message = chat[item.msgId];
+        const attachment = message?.extra?.media?.[item.mediaIndex];
+        if (message && attachment) {
+            return getFavoriteSourceKey(getOrCreateMessageCiaId(message), attachment.url);
+        }
+    }
+    return getFavoriteSourceKey(item?.cia_msg_id || item?.sourceCiaMsgId, item?.sourceUrl || item?.url) || String(item?.id || 'gallery-item');
+}
+
+async function toggleGalleryFavorite(item) {
+    const mutationKey = getFavoriteMutationKey(item);
+    const previous = favoriteMutationQueues.get(mutationKey) || Promise.resolve();
+    const task = previous.catch(() => {}).then(() => performGalleryFavoriteToggle(item));
+    favoriteMutationQueues.set(mutationKey, task);
+    try {
+        await task;
+    } finally {
+        if (favoriteMutationQueues.get(mutationKey) === task) {
+            favoriteMutationQueues.delete(mutationKey);
+        }
+    }
+}
+
+async function performGalleryFavoriteToggle(item) {
+    if (item.type === 'active') {
+        const message = chat.find(msg => item.cia_msg_id && msg?.extra?.cia_msg_id === item.cia_msg_id) || chat[item.msgId];
         if (message && message.extra && Array.isArray(message.extra.media)) {
-            const attachment = message.extra.media[item.mediaIndex];
+            const expectedUrl = String(item.sourceUrl || item.url || '');
+            const attachment = message.extra.media.find(media => String(media?.url || '') === expectedUrl)
+                || (!expectedUrl ? message.extra.media[item.mediaIndex] : null);
             if (attachment) {
                 attachment[EXTRA_KEY] ??= {};
                 attachment[EXTRA_KEY].isFavorited = !attachment[EXTRA_KEY].isFavorited;
                 item.isFavorited = attachment[EXTRA_KEY].isFavorited;
+                item.cia_msg_id = getOrCreateMessageCiaId(message);
+                item.sourceCiaMsgId = item.cia_msg_id;
+                item.sourceUrl = attachment.url;
+                item.favoriteSourceKey = getFavoriteSourceKey(item.cia_msg_id, attachment.url);
+                if (item.isFavorited) {
+                    try {
+                        await ensureFavoriteArchiveCopy(item, attachment, message);
+                    } catch (error) {
+                        attachment[EXTRA_KEY].isFavorited = false;
+                        item.isFavorited = false;
+                        toastr.error(t`Failed to save favorite image copy: ${String(error?.message || error)}`, 'Context Image Assistant');
+                    }
+                } else {
+                    removeFavoriteArchiveCopy(item);
+                }
             }
         }
     } else if (item.type === 'recycle') {
@@ -5409,10 +6489,25 @@ async function toggleGalleryFavorite(item) {
             const binItem = bin[idx];
             binItem.isFavorited = !binItem.isFavorited;
             item.isFavorited = binItem.isFavorited;
+            if (item.isFavorited) {
+                try {
+                    await ensureFavoriteArchiveCopy(item, binItem, null);
+                } catch (error) {
+                    binItem.isFavorited = false;
+                    item.isFavorited = false;
+                    toastr.error(t`Failed to save favorite image copy: ${String(error?.message || error)}`, 'Context Image Assistant');
+                }
+            } else {
+                removeFavoriteArchiveCopy(item);
+            }
             saveRecycleBin(bin);
         }
+    } else if (item.type === 'favorite_archive') {
+        removeFavoriteArchiveCopy(item);
+        item.isFavorited = false;
     }
 
+    invalidateGalleryData();
     hasUnsavedGalleryChanges = true;
     $(`#${PANEL_CONTAINER_ID} #cia_save_gallery, .cia-large-grid-popup-wrapper #cia_large_save_gallery`).css('display', 'inline-flex');
 
@@ -5422,7 +6517,7 @@ async function toggleGalleryFavorite(item) {
     // 1. Direct sidebar card DOM update to avoid full list reconstruction lag
     const sidebarCards = $(`#${PANEL_CONTAINER_ID} .cia-recycle-card[data-id="${item.id}"]`);
     if (sidebarCards.length) {
-        if (showOnlyFav && !isFav) {
+        if ((showOnlyFav && !isFav) || (item.type === 'favorite_archive' && !isFav)) {
             sidebarCards.remove();
             const grid = $(`#${PANEL_CONTAINER_ID} #cia_gallery_grid`);
             if (grid.children('.cia-recycle-card').length === 0) {
@@ -5445,7 +6540,7 @@ async function toggleGalleryFavorite(item) {
     const largeGridCards = largeGridWrapper.find(`.cia-recycle-card[data-id="${item.id}"]`);
     if (largeGridCards.length) {
         const largeGridMode = largeGridWrapper.attr('data-mode') || 'gallery';
-        if (largeGridMode === 'gallery' && showOnlyFav && !isFav) {
+        if (largeGridMode === 'gallery' && ((showOnlyFav && !isFav) || (item.type === 'favorite_archive' && !isFav))) {
             largeGridCards.remove();
             const container = largeGridWrapper.find('.cia-large-grid-container');
             if (container.children('.cia-recycle-card').length === 0) {
@@ -5469,7 +6564,7 @@ async function toggleGalleryFavorite(item) {
     }
 
     // 3. Update count display badge on settings panel
-    const total = getActiveGalleryImages().length;
+    const total = getGalleryImages().length;
     const items = getFilteredGalleryImages();
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_count`).text(isGalleryFilterActive() ? `${items.length}/${total}` : items.length);
 
@@ -5566,6 +6661,11 @@ function testIndexFilter(item, filterText) {
     return matchRanges(item, filter.inclusions);
 }
 
+const promptInspectorUiState = {
+    activeTab: 'user',
+    wrap: true,
+};
+
 async function showPromptInspector() {
     const messageId = getLastAssistantMessageId();
     if (messageId === null) {
@@ -5573,64 +6673,466 @@ async function showPromptInspector() {
         return;
     }
 
-    const settings = ensureSettings();
-    settings.systemPrompt = getActiveSystemPrompt(settings);
-    const systemPrompt = substituteParams(settings.systemPrompt);
+    const buildSnapshot = () => {
+        const settings = ensureSettings();
+        const system = substituteParams(getPlannerSystemPrompt(settings));
+        const user = substituteParams(buildUserPrompt(messageId));
+        const schema = JSON.stringify(stripSchemaConstraints(getEffectiveJsonSchema(settings)), null, 2);
+        const provider = settings.providerMode === 'custom_proxy'
+            ? `${t`Independent Endpoint`}: ${settings.customModel || t`Model not set`}`
+            : t`SillyTavern Current LLM`;
+        const full = [
+            `[${t`Target Floor`}] #${messageId + 1}`,
+            `[${t`Request Type`}] ${t`Normal Image Generation`}`,
+            `[${t`LLM Source`}] ${provider}`,
+            '',
+            `[${t`System Prompt`}]`,
+            system,
+            '',
+            `[${t`User Prompt & Context`}]`,
+            user,
+            '',
+            `[${t`JSON Schema Constraint`}]`,
+            schema,
+        ].join('\n');
+        return {
+            tabs: { user, system, schema, full },
+            provider,
+            messageCount: (user.match(/^#\d+\s+(?:user|assistant|system)\b/gm) || []).length,
+            totalChars: system.length + user.length + schema.length,
+        };
+    };
 
-    let ragTags = '';
-    if (settings.promptMode === 'rag' && settings.enableDictionary && settings.activeDictionaryProfile) {
-        const lastMessage = chat[messageId];
-        const text = String(getMessageText(lastMessage) || '').trim();
-        if (text) {
-            ragTags = await queryDictionaryRag(text);
+    let snapshot = buildSnapshot();
+    let searchCursor = -1;
+    const popupContent = $(applyLocale(`
+        <div class="cia-prompt-inspector-wrapper">
+            <div class="cia-inspector-meta-row">
+                <span><strong data-i18n="Target Floor">Target Floor</strong> #${messageId + 1}</span>
+                <span><strong data-i18n="Request Type">Request Type</strong> <span data-i18n="Normal Image Generation">Normal Image Generation</span></span>
+                <span class="cia-inspector-provider"><strong data-i18n="LLM Source">LLM Source</strong> <span class="cia-inspector-provider-value"></span></span>
+                <span><strong data-i18n="Messages">Messages</strong> <span class="cia-inspector-message-count"></span></span>
+                <span><strong data-i18n="Characters">Characters</strong> <span class="cia-inspector-char-count"></span></span>
+            </div>
+
+            <div class="cia-inspector-tabs" role="tablist">
+                <button class="cia-inspector-tab" data-tab="user" type="button" data-i18n="User Message">User Message</button>
+                <button class="cia-inspector-tab" data-tab="system" type="button" data-i18n="System Prompt">System Prompt</button>
+                <button class="cia-inspector-tab" data-tab="schema" type="button" data-i18n="JSON Schema">JSON Schema</button>
+                <button class="cia-inspector-tab" data-tab="full" type="button" data-i18n="Complete Request">Complete Request</button>
+            </div>
+
+            <div class="cia-inspector-toolbar">
+                <div class="cia-inspector-jumps">
+                    <button class="menu_button" data-marker="<current_interaction>" type="button" data-i18n="Current Interaction">Current Interaction</button>
+                    <button class="menu_button" data-marker="<historical_interactions>" type="button" data-i18n="History">History</button>
+                    <button class="menu_button" data-marker="<runtime_defaults>" type="button" data-i18n="Runtime Parameters">Runtime Parameters</button>
+                </div>
+                <div class="cia-inspector-tools">
+                    <label class="cia-inspector-search">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input class="text_pole cia-inspector-search-input" type="search" data-i18n="[placeholder]Search current prompt" placeholder="Search current prompt">
+                        <span class="cia-inspector-search-count"></span>
+                    </label>
+                    <button class="cia-inspector-icon-btn cia-inspector-find-prev" type="button" data-i18n="[title]Previous match" title="Previous match"><i class="fa-solid fa-chevron-up"></i></button>
+                    <button class="cia-inspector-icon-btn cia-inspector-find-next" type="button" data-i18n="[title]Next match" title="Next match"><i class="fa-solid fa-chevron-down"></i></button>
+                    <button class="cia-inspector-icon-btn cia-inspector-wrap-toggle" type="button" data-i18n="[title]Toggle line wrapping" title="Toggle line wrapping"><i class="fa-solid fa-align-left"></i></button>
+                    <button class="menu_button cia-inspector-copy-current" type="button"><i class="fa-solid fa-copy"></i> <span data-i18n="Copy Current">Copy Current</span></button>
+                    <button class="menu_button cia-inspector-copy-full" type="button"><i class="fa-solid fa-copy"></i> <span data-i18n="Copy Complete Request">Copy Complete Request</span></button>
+                    <button class="cia-inspector-icon-btn cia-inspector-refresh" type="button" data-i18n="[title]Refresh Preview" title="Refresh Preview"><i class="fa-solid fa-arrows-rotate"></i></button>
+                </div>
+            </div>
+
+            <textarea readonly spellcheck="false" class="text_pole cia-inspector-viewer"></textarea>
+        </div>
+    `));
+
+    const viewer = popupContent.find('.cia-inspector-viewer');
+    const searchInput = popupContent.find('.cia-inspector-search-input');
+    const searchCount = popupContent.find('.cia-inspector-search-count');
+
+    const updateMetadata = () => {
+        popupContent.find('.cia-inspector-provider-value').text(snapshot.provider);
+        popupContent.find('.cia-inspector-message-count').text(snapshot.messageCount);
+        popupContent.find('.cia-inspector-char-count').text(snapshot.totalChars.toLocaleString());
+    };
+
+    const applyWrap = () => {
+        viewer.attr('wrap', promptInspectorUiState.wrap ? 'soft' : 'off');
+        viewer.toggleClass('nowrap', !promptInspectorUiState.wrap);
+        popupContent.find('.cia-inspector-wrap-toggle').toggleClass('active', promptInspectorUiState.wrap);
+    };
+
+    const showTab = (tab) => {
+        if (!snapshot.tabs[tab]) tab = 'user';
+        promptInspectorUiState.activeTab = tab;
+        searchCursor = -1;
+        searchCount.text('');
+        viewer.val(snapshot.tabs[tab]).scrollTop(0).scrollLeft(0);
+        popupContent.find('.cia-inspector-tab').toggleClass('active', false)
+            .filter(`[data-tab="${tab}"]`).toggleClass('active', true);
+        popupContent.find('.cia-inspector-jumps').toggle(tab === 'user');
+        applyWrap();
+    };
+
+    const selectMatch = (index, length) => {
+        viewer[0].focus();
+        viewer[0].setSelectionRange(index, index + length);
+        const lineCount = String(viewer.val()).slice(0, index).split('\n').length;
+        viewer.scrollTop(Math.max(0, lineCount * 19 - viewer.innerHeight() / 2));
+    };
+
+    const findMatch = (direction = 1) => {
+        const query = String(searchInput.val() || '');
+        const text = String(viewer.val() || '');
+        if (!query || !text) {
+            searchCursor = -1;
+            searchCount.text('');
+            return;
         }
+        const haystack = text.toLocaleLowerCase();
+        const needle = query.toLocaleLowerCase();
+        const matches = [];
+        let index = 0;
+        while ((index = haystack.indexOf(needle, index)) >= 0) {
+            matches.push(index);
+            index += Math.max(1, needle.length);
+        }
+        if (!matches.length) {
+            searchCursor = -1;
+            searchCount.text(t`No matches`);
+            return;
+        }
+        const selectionStart = viewer[0].selectionStart || 0;
+        let matchIndex;
+        if (direction > 0) {
+            matchIndex = matches.findIndex(value => value > Math.max(searchCursor, selectionStart - 1));
+            if (matchIndex < 0) matchIndex = 0;
+        } else {
+            const before = searchCursor < 0 ? selectionStart : searchCursor;
+            matchIndex = -1;
+            for (let i = matches.length - 1; i >= 0; i--) {
+                if (matches[i] < before) {
+                    matchIndex = i;
+                    break;
+                }
+            }
+            if (matchIndex < 0) matchIndex = matches.length - 1;
+        }
+        searchCursor = matches[matchIndex];
+        searchCount.text(`${matchIndex + 1}/${matches.length}`);
+        selectMatch(searchCursor, query.length);
+    };
+
+    const copyWithFeedback = async (button, text) => {
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            const icon = button.find('i');
+            const label = button.find('span');
+            const oldIcon = icon.attr('class');
+            const oldLabel = label.text();
+            icon.attr('class', 'fa-solid fa-check');
+            if (label.length) label.text(t`Copied`);
+            setTimeout(() => {
+                icon.attr('class', oldIcon);
+                if (label.length) label.text(oldLabel);
+            }, 1200);
+        } catch (error) {
+            console.error('Failed to copy prompt inspector content:', error);
+            toastr.error(t`Failed to copy.`, 'Context Image Assistant');
+        }
+    };
+
+    popupContent.find('.cia-inspector-tab').on('click', function () {
+        showTab(String($(this).attr('data-tab') || 'user'));
+    });
+    popupContent.find('.cia-inspector-jumps button').on('click', function () {
+        const marker = String($(this).attr('data-marker') || '');
+        const index = String(viewer.val() || '').indexOf(marker);
+        if (index >= 0) selectMatch(index, marker.length);
+    });
+    popupContent.find('.cia-inspector-find-next').on('click', () => findMatch(1));
+    popupContent.find('.cia-inspector-find-prev').on('click', () => findMatch(-1));
+    searchInput.on('input', () => {
+        searchCursor = -1;
+        findMatch(1);
+    }).on('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            findMatch(event.shiftKey ? -1 : 1);
+        }
+    });
+    popupContent.find('.cia-inspector-wrap-toggle').on('click', () => {
+        promptInspectorUiState.wrap = !promptInspectorUiState.wrap;
+        applyWrap();
+    });
+    popupContent.find('.cia-inspector-copy-current').on('click', function () {
+        copyWithFeedback($(this), String(viewer.val() || ''));
+    });
+    popupContent.find('.cia-inspector-copy-full').on('click', function () {
+        copyWithFeedback($(this), snapshot.tabs.full);
+    });
+    popupContent.find('.cia-inspector-refresh').on('click', () => {
+        snapshot = buildSnapshot();
+        updateMetadata();
+        showTab(promptInspectorUiState.activeTab);
+    });
+
+    updateMetadata();
+    showTab(promptInspectorUiState.activeTab);
+
+    const popup = new Popup(popupContent, POPUP_TYPE.TEXT, t`Prompt Inspector`, {
+        okButton: t`Close`,
+        cancelButton: null,
+        wide: true,
+        wider: true,
+        leftAlign: true,
+    });
+    await popup.show();
+}
+
+function createContextCleanerRule() {
+    return {
+        id: `rule_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        label: t`New Cleaner Rule`,
+        enabled: true,
+        find: '',
+        replace: '',
+    };
+}
+
+function getContextCleanerRuleSummary(rule) {
+    switch (rule?.id) {
+        case 'strip_thinking_blocks':
+            return t`Removes think/thinking blocks and orphan thinking tags.`;
+        case 'strip_disclaimer_interleaving':
+            return t`Removes disclaimer and interleaving blocks.`;
+        case 'unwrap_details_summary':
+            return t`Keeps details/summary text but removes the wrapper.`;
+        case 'unwrap_summary_tags':
+            return t`Removes standalone summary tags.`;
+        case 'strip_html_ui_noise':
+            return t`Optional: removes common HTML UI wrappers.`;
+        default:
+            return t`Custom cleaner rule.`;
+    }
+}
+
+async function openContextCleanerEditor() {
+    const settings = ensureSettings();
+    const rulesDraft = (Array.isArray(settings.contextCleanerRules) ? settings.contextCleanerRules : [])
+        .map(rule => ({ ...rule }));
+
+    const content = $(applyLocale(`
+        <div class="cia-rules-wrapper cia-context-cleaner-editor">
+            <div class="cia-rules-toolbar-row">
+                <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+                    <div style="font-weight: 700;" data-i18n="Context Cleaner Rules">Context Cleaner Rules</div>
+                    <div style="font-size: 0.86em; opacity: 0.72;" data-i18n="Context Cleaner Rules Intro">Rules run in order on planner chat history. Candidate JSON filtering is controlled by the separate context checkbox.</div>
+                </div>
+                <div class="cia-rules-toolbar">
+                    <button id="cia_cleaner_add_rule" class="cia-icon-btn" type="button" data-i18n="[title]Add cleaner rule" title="Add cleaner rule">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <button id="cia_cleaner_reset_rules" class="cia-icon-btn" type="button" data-i18n="[title]Restore default cleaner rules" title="Restore default cleaner rules">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="cia_cleaner_rules_list" class="cia-cleaner-rules-list"></div>
+        </div>
+    `));
+
+    const renderRules = () => {
+        const list = content.find('#cia_cleaner_rules_list');
+        list.empty();
+        if (!rulesDraft.length) {
+            list.append($(applyLocale(`<div class="cia-recycle-empty" data-i18n="No cleaner rules configured.">No cleaner rules configured.</div>`)));
+            return;
+        }
+
+        rulesDraft.forEach((rule, index) => {
+            const summary = getContextCleanerRuleSummary(rule);
+            const isDisabledClass = rule.enabled ? '' : 'disabled';
+            const row = $(applyLocale(`
+                <div class="cia-rule-card cia-cleaner-rule-card ${isDisabledClass}" data-index="${index}">
+                    <div class="cia-rule-drag-controls">
+                        <button class="cia-rule-drag-btn btn-up" type="button" title="${t('Move Up')}"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button class="cia-rule-drag-btn btn-down" type="button" title="${t('Move Down')}"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
+                    <input type="checkbox" class="cia-cleaner-enabled cia-rule-card-checkbox" ${rule.enabled ? 'checked' : ''} title="${t('Enable/Disable rule')}" />
+                    <div class="cia-rule-info">
+                        <div class="cia-cleaner-main-row">
+                            <input class="text_pole cia-cleaner-label" type="text" value="${escapeHtmlAttr(rule.label || '')}" aria-label="${t('Rule Name')}">
+                            <span class="cia-rule-badge ${rule.enabled ? 'add' : ''}">${rule.enabled ? t`Enabled` : t`Disabled`}</span>
+                        </div>
+                        <div class="cia-cleaner-summary">${escapeHtml(summary)}</div>
+                        <details class="cia-cleaner-advanced">
+                            <summary data-i18n="Advanced Pattern">Advanced Pattern</summary>
+                            <div class="cia-cleaner-advanced-grid">
+                                <label class="cia-rule-form-field">
+                                    <span data-i18n="Find Regex">Find Regex</span>
+                                    <textarea class="text_pole cia-cleaner-find" rows="3">${escapeHtml(rule.find || '')}</textarea>
+                                </label>
+                                <label class="cia-rule-form-field">
+                                    <span data-i18n="Replace With">Replace With</span>
+                                    <textarea class="text_pole cia-cleaner-replace" rows="3">${escapeHtml(rule.replace || '')}</textarea>
+                                </label>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="cia-rule-actions-cell">
+                        <button class="cia-icon-btn btn-delete" type="button" title="${t('Delete')}" style="color: var(--red, #cf4646);"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+            `));
+
+            row.find('.cia-cleaner-enabled').on('change', function () {
+                rule.enabled = !!$(this).prop('checked');
+                renderRules();
+            });
+            row.find('.cia-cleaner-label').on('input', function () {
+                rule.label = String($(this).val() || '');
+            });
+            row.find('.cia-cleaner-find').on('input', function () {
+                rule.find = String($(this).val() || '');
+            });
+            row.find('.cia-cleaner-replace').on('input', function () {
+                rule.replace = String($(this).val() || '');
+            });
+            row.find('.btn-up').on('click', () => {
+                if (index <= 0) return;
+                [rulesDraft[index - 1], rulesDraft[index]] = [rulesDraft[index], rulesDraft[index - 1]];
+                renderRules();
+            });
+            row.find('.btn-down').on('click', () => {
+                if (index >= rulesDraft.length - 1) return;
+                [rulesDraft[index + 1], rulesDraft[index]] = [rulesDraft[index], rulesDraft[index + 1]];
+                renderRules();
+            });
+            row.find('.btn-delete').on('click', () => {
+                rulesDraft.splice(index, 1);
+                renderRules();
+            });
+            list.append(row);
+        });
+    };
+
+    content.find('#cia_cleaner_add_rule').on('click', () => {
+        rulesDraft.push(createContextCleanerRule());
+        renderRules();
+    });
+    content.find('#cia_cleaner_reset_rules').on('click', async () => {
+        const confirm = await Popup.show.confirm(t`Restore Default Cleaner Rules`, t`Replace current cleaner rules with the default rule set?`);
+        if (!confirm) return;
+        rulesDraft.splice(0, rulesDraft.length, ...DEFAULT_CONTEXT_CLEANER_RULES.map(rule => ({ ...rule })));
+        renderRules();
+    });
+
+    renderRules();
+
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, t`Configure Context Cleaner`, {
+        okButton: t`Save`,
+        cancelButton: t`Cancel`,
+        wide: true,
+        leftAlign: true,
+        onClosing: async (p) => {
+            if (p.result !== POPUP_RESULT.AFFIRMATIVE) {
+                return true;
+            }
+            for (const rule of rulesDraft) {
+                if (!String(rule.find || '').trim()) {
+                    toastr.error(t`Cleaner rule pattern cannot be empty.`, 'Context Image Assistant');
+                    return false;
+                }
+                try {
+                    compileCleanerRule(rule);
+                } catch (error) {
+                    toastr.error(`${rule.label || rule.id}: ${String(error?.message || error)}`, 'Context Image Assistant');
+                    return false;
+                }
+            }
+            settings.contextCleanerRules = rulesDraft.map((rule, index) => ({
+                id: String(rule.id || `rule_${Date.now()}_${index}`),
+                label: String(rule.label || `Rule ${index + 1}`),
+                enabled: !!rule.enabled,
+                find: String(rule.find || ''),
+                replace: String(rule.replace || ''),
+            }));
+            saveSettingsDebounced();
+            return true;
+        },
+    });
+    await popup.show();
+}
+
+async function showCleanContextPreview() {
+    const messageId = getLastAssistantMessageId();
+    if (messageId === null) {
+        toastr.warning(t`No character reply available to inspect.`, 'Context Image Assistant');
+        return;
     }
 
-    const userPrompt = substituteParams(buildUserPrompt(messageId, { ragTags }));
-    const jsonSchema = JSON.stringify(stripSchemaConstraints(getEffectiveJsonSchema(settings)), null, 2);
+    const result = buildCleanPlannerContext(messageId);
+    const removedChars = Math.max(0, result.originalChars - result.cleanedChars);
+    const reductionPercent = result.originalChars > 0 ? Math.round((removedChars / result.originalChars) * 100) : 0;
+    const ruleStatsText = Object.keys(result.ruleHits || {}).length
+        ? Object.entries(result.ruleHits).map(([id, stat]) => {
+            const error = result.ruleErrors?.[id] ? ` (${t`Error`}: ${result.ruleErrors[id]})` : '';
+            return `${stat.label}: ${stat.hits}${error}`;
+        }).join('\n')
+        : t`Context cleaner disabled or no rules enabled.`;
 
     const popupContent = $(applyLocale(`
-        <div class="cia-prompt-inspector-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
-            <div style="font-size: 0.95em; opacity: 0.85; margin-bottom: 4px;" data-i18n="Prompt Inspector Intro">This is the final raw prompt that would be sent to the planning LLM if generated at this moment.</div>
+        <div class="cia-clean-context-wrapper" style="width: 100%; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
+                <div style="font-size: 0.95em; opacity: 0.85;" data-i18n="Clean Planner Context Intro">Preview the conversation context after removing hidden thinking blocks, summary UI wrappers, and code/HTML noise.</div>
+                <button class="menu_button cia-copy-btn" data-target="#cia_clean_context_output" type="button" title="Copy Cleaned Context" data-i18n="[title]Copy Cleaned Context" style="margin: 0; padding: 4px 10px; width: auto; min-height: 28px; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-copy"></i> <span data-i18n="Copy Cleaned Context">Copy Cleaned Context</span>
+                </button>
+            </div>
 
-            <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
-                <span style="font-weight: 600;" data-i18n="System Prompt">System Prompt</span>
-                <div class="cia-textarea-container" style="position: relative;">
-                    <textarea readonly id="cia_inspect_sys" class="text_pole" style="width: 100%; height: 110px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
-                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_sys" type="button" title="Copy System Prompt" data-i18n="[title]Copy System Prompt" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
-                        <i class="fa-solid fa-copy"></i>
-                    </button>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;">
+                <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px;">
+                    <div style="font-size: 0.78em; opacity: 0.65;" data-i18n="Messages">Messages</div>
+                    <div style="font-weight: 700;">${result.messageCount}</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px;">
+                    <div style="font-size: 0.78em; opacity: 0.65;" data-i18n="Changed Messages">Changed Messages</div>
+                    <div style="font-weight: 700;">${result.changedMessages}</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px;">
+                    <div style="font-size: 0.78em; opacity: 0.65;" data-i18n="Removed Characters">Removed Characters</div>
+                    <div style="font-weight: 700;">${removedChars} (${reductionPercent}%)</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 10px;">
+                    <div style="font-size: 0.78em; opacity: 0.65;" data-i18n="Context Limit">Context Limit</div>
+                    <div style="font-weight: 700;">${result.truncated ? t`Truncated` : t`Full`}</div>
                 </div>
             </div>
 
             <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
-                <span style="font-weight: 600;" data-i18n="User Prompt & Context">User Prompt & Context</span>
-                <div class="cia-textarea-container" style="position: relative;">
-                    <textarea readonly id="cia_inspect_user" class="text_pole" style="width: 100%; height: 260px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
-                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_user" type="button" title="Copy User Prompt" data-i18n="[title]Copy User Prompt" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
-                        <i class="fa-solid fa-copy"></i>
-                    </button>
-                </div>
+                <span style="font-weight: 600;" data-i18n="Rule Match Summary">Rule Match Summary</span>
+                <textarea readonly id="cia_clean_context_rule_stats" class="text_pole cia-clean-context-stats"></textarea>
             </div>
 
-            <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px;">
-                <span style="font-weight: 600;" data-i18n="JSON Schema Constraint">JSON Schema Constraint</span>
-                <div class="cia-textarea-container" style="position: relative;">
-                    <textarea readonly id="cia_inspect_schema" class="text_pole" style="width: 100%; height: 90px; font-family: monospace; font-size: 0.85em; resize: vertical; box-sizing: border-box; padding-right: 36px;"></textarea>
-                    <button class="menu_button cia-copy-btn" data-target="#cia_inspect_schema" type="button" title="Copy JSON Schema" data-i18n="[title]Copy JSON Schema" style="position: absolute; top: 4px; right: 4px; margin: 0; padding: 2px 6px; font-size: 0.82em; height: auto; width: auto; min-height: 20px;">
-                        <i class="fa-solid fa-copy"></i>
-                    </button>
+            <div class="cia-clean-context-grid">
+                <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                    <span style="font-weight: 600;" data-i18n="Cleaned Context">Cleaned Context</span>
+                    <textarea readonly id="cia_clean_context_output" class="text_pole cia-clean-context-text"></textarea>
+                </div>
+                <div class="cia-field" style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                    <span style="font-weight: 600;" data-i18n="Original Context">Original Context</span>
+                    <textarea readonly id="cia_clean_context_original" class="text_pole cia-clean-context-text"></textarea>
                 </div>
             </div>
         </div>
     `));
 
-    // Fill values safely using .val()
-    popupContent.find('#cia_inspect_sys').val(systemPrompt);
-    popupContent.find('#cia_inspect_user').val(userPrompt);
-    popupContent.find('#cia_inspect_schema').val(jsonSchema);
-
-    // Bind copy actions
+    popupContent.find('#cia_clean_context_output').val(result.cleanedContext);
+    popupContent.find('#cia_clean_context_original').val(result.rawContext);
+    popupContent.find('#cia_clean_context_rule_stats').val(ruleStatsText);
     popupContent.find('.cia-copy-btn').on('click', function () {
         const targetId = $(this).attr('data-target');
         const textVal = popupContent.find(targetId).val();
@@ -5643,7 +7145,7 @@ async function showPromptInspector() {
         }
     });
 
-    const popup = new Popup(popupContent, POPUP_TYPE.TEXT, t`Prompt Inspector`, {
+    const popup = new Popup(popupContent, POPUP_TYPE.TEXT, t`Clean Planner Context`, {
         okButton: t`Close`,
         cancelButton: null,
         wide: true,
@@ -5715,6 +7217,30 @@ function showGalleryFilterHelp() {
 
 let currentGalleryItems = [];
 let hasUnsavedGalleryChanges = false;
+let galleryListRenderVersion = 0;
+let recycleListRenderVersion = 0;
+
+function appendGalleryCardsInBatches(container, items, createCard, isCurrent, batchSize = 40) {
+    let index = 0;
+    const appendBatch = () => {
+        if (!isCurrent() || !container[0]) return;
+        const fragment = document.createDocumentFragment();
+        const end = Math.min(items.length, index + batchSize);
+        for (; index < end; index++) {
+            const card = createCard(items[index]);
+            if (card?.[0]) fragment.appendChild(card[0]);
+        }
+        container[0].appendChild(fragment);
+        if (index < items.length) {
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(appendBatch);
+            } else {
+                setTimeout(appendBatch, 0);
+            }
+        }
+    };
+    appendBatch();
+}
 
 async function showGalleryImageDetail(itemId, items = null) {
     if (Array.isArray(items)) {
@@ -5731,6 +7257,8 @@ async function showGalleryImageDetail(itemId, items = null) {
         let floorInfo = '';
         if (item.type === 'active') {
             floorInfo = t`Floor: #${item.floorNumber || item.msgId + 1}`;
+        } else if (item.type === 'favorite_archive') {
+            floorInfo = item.floorNumber ? t`Floor: #${item.floorNumber} (Favorited Copy)` : t`Favorited Copy (Original floor deleted)`;
         } else {
             floorInfo = item.floorNumber ? t`Floor: #${item.floorNumber} (Recycled)` : t`Recycled (Original floor deleted)`;
         }
@@ -6009,8 +7537,10 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
     `));
 
     const container = popupContent.find('.cia-large-grid-container');
+    let renderCardsVersion = 0;
 
     const renderCards = () => {
+        const renderVersion = ++renderCardsVersion;
         const currentItems = mode === 'gallery' ? sortGalleryItemsForLargeGrid(getFilteredGalleryImages()) : getFilteredRecycleImages();
         popupContent.find('.cia-large-grid-count').text(currentItems.length);
         container.empty();
@@ -6020,18 +7550,18 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
             return;
         }
 
-        currentItems.forEach((item) => {
+        appendGalleryCardsInBatches(container, currentItems, (item) => {
             const isFavorited = !!item.isFavorited;
             const card = $(applyLocale(`
                 <div class="cia-recycle-card cia-large-card" data-id="${escapeHtmlAttr(item.id)}">
-                    <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" />
+                    <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" loading="lazy" decoding="async" />
                     ${mode === 'gallery' ? `
                         <div class="cia-gallery-card-heart ${isFavorited ? 'favorited' : ''}" title="${isFavorited ? t('Remove from favorites') : t('Add to favorites')}">
                             <i class="${isFavorited ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
                         </div>
                     ` : ''}
                     <div class="cia-recycle-actions">
-                        ${mode === 'gallery' ? `
+                        ${mode === 'gallery' && item.type === 'active' ? `
                             <button class="cia-recycle-btn btn-delete btn-recycle-active" type="button" title="Move to Recycle Bin" data-i18n="[title]Move to Recycle Bin"><i class="fa-solid fa-trash-can"></i></button>
                         ` : ''}
                         ${mode === 'recycle' ? `
@@ -6040,7 +7570,7 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
                         ` : ''}
                     </div>
                     <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); font-size: 0.76em; padding: 4px 6px; display: flex; justify-content: center; pointer-events: none;">
-                        <span style="opacity: 0.85;">${item.type === 'active' ? t`Floor #${item.floorNumber || item.msgId + 1}` : t`Recycled`}</span>
+                        <span style="opacity: 0.85;">${item.type === 'active' ? t`Floor #${item.floorNumber || item.msgId + 1}` : (item.type === 'favorite_archive' ? t`Favorited Copy` : t`Recycled`)}</span>
                     </div>
                 </div>
             `));
@@ -6094,8 +7624,8 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
                 showGalleryImageDetail(item.id, currentItems);
             });
 
-            container.append(card);
-        });
+            return card;
+        }, () => renderCardsVersion === renderVersion);
     };
 
     // Initialize inputs & sync if mode === 'gallery'
@@ -6167,7 +7697,8 @@ async function showGalleryLargeGridPreview(mode = 'gallery') {
 }
 
 function renderGalleryList() {
-    const total = getActiveGalleryImages().length;
+    const renderVersion = ++galleryListRenderVersion;
+    const total = getGalleryImages().length;
     const items = getFilteredGalleryImages();
     $(`#${PANEL_CONTAINER_ID} #cia_gallery_count`).text(isGalleryFilterActive() ? `${items.length}/${total}` : items.length);
 
@@ -6187,16 +7718,16 @@ function renderGalleryList() {
         return;
     }
 
-    items.forEach(item => {
+    appendGalleryCardsInBatches(grid, items, item => {
         const isFavorited = !!item.isFavorited;
         const card = $(applyLocale(`
             <div class="cia-recycle-card" data-id="${escapeHtmlAttr(item.id)}">
-                <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" />
+                <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" loading="lazy" decoding="async" />
                 <div class="cia-gallery-card-heart ${isFavorited ? 'favorited' : ''}" title="${isFavorited ? t('Remove from favorites') : t('Add to favorites')}">
                     <i class="${isFavorited ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
                 </div>
                 <div class="cia-recycle-actions">
-                    <button class="cia-recycle-btn btn-delete btn-recycle-active" type="button" title="Move to Recycle Bin" data-i18n="[title]Move to Recycle Bin"><i class="fa-solid fa-trash-can"></i></button>
+                    ${item.type === 'active' ? '<button class="cia-recycle-btn btn-delete btn-recycle-active" type="button" title="Move to Recycle Bin" data-i18n="[title]Move to Recycle Bin"><i class="fa-solid fa-trash-can"></i></button>' : ''}
                 </div>
             </div>
         `));
@@ -6218,11 +7749,12 @@ function renderGalleryList() {
             showGalleryImageDetail(item.id, items);
         });
 
-        grid.append(card);
-    });
+        return card;
+    }, () => galleryListRenderVersion === renderVersion);
 }
 
 function renderRecycleBinList() {
+    const renderVersion = ++recycleListRenderVersion;
     const items = getFilteredRecycleImages();
     $(`#${PANEL_CONTAINER_ID} #cia_recycle_count`).text(items.length);
 
@@ -6240,10 +7772,10 @@ function renderRecycleBinList() {
         return;
     }
 
-    items.forEach(item => {
+    appendGalleryCardsInBatches(grid, items, item => {
         const card = $(applyLocale(`
             <div class="cia-recycle-card" data-id="${escapeHtmlAttr(item.id)}">
-                <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" />
+                <img src="${escapeHtmlAttr(item.url)}" class="cia-recycle-thumb" loading="lazy" decoding="async" />
                 <div class="cia-recycle-actions">
                     <button class="cia-recycle-btn btn-restore" type="button" title="Restore to original floor" data-i18n="[title]Restore to original floor"><i class="fa-solid fa-arrow-rotate-left"></i></button>
                     <button class="cia-recycle-btn btn-delete" type="button" title="Permanently delete" data-i18n="[title]Permanently delete"><i class="fa-solid fa-trash-can"></i></button>
@@ -6268,8 +7800,8 @@ function renderRecycleBinList() {
             showGalleryImageDetail(item.id, items);
         });
 
-        grid.append(card);
-    });
+        return card;
+    }, () => recycleListRenderVersion === renderVersion);
 }
 
 async function getAvatarBase64(url) {
@@ -6322,6 +7854,7 @@ function attachImageToMessage(messageId, candidate, result) {
     message.extra.media_display = MEDIA_DISPLAY.GALLERY;
     message.extra.media_index = message.extra.media.length - 1;
     message.extra.inline_image = true;
+    invalidateGalleryData();
 
     // Auto-sweep old non-displayed generated images on this floor to recycle bin
     if (settings.autoClear) {
@@ -6338,8 +7871,7 @@ function attachImageToMessage(messageId, candidate, result) {
 
 function scheduleAutoAnalyze(messageId, type) {
     const settings = ensureSettings();
-    const autoPipelineEnabled = Boolean(settings.enabled || settings.autoGenerate);
-    if (!autoPipelineEnabled || type === 'extension') {
+    if (!settings.enabled || type === 'extension') {
         return;
     }
 
@@ -6557,8 +8089,13 @@ eventSource.on(event_types.GENERATION_ENDED, () => {
     void drainAutoAnalyzeQueue();
 });
 eventSource.on(event_types.CHAT_CHANGED, () => {
+    clearPendingGalleryUiWork();
+    favoriteSourceHashCache.clear();
+    lastFavoriteArchiveMigrationSignature = '';
+    favoriteArchiveNormalizationPending = false;
+    invalidateGalleryData();
     setTimeout(renderAllMessageControls, 250);
-    refreshImageManagementViews();
+    refreshImageManagementViews({ force: true });
 });
 eventSource.on(event_types.MESSAGE_UPDATED, (messageId) => setTimeout(() => renderMessageControls(Number(messageId)), 250));
 eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => setTimeout(() => renderMessageControls(Number(messageId)), 50));
@@ -6568,7 +8105,6 @@ eventSource.on(event_types.IMAGE_SWIPED, ({ message }) => {
         setTimeout(() => renderMessageControls(messageId), 100);
     }
 });
-
 eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, (eventData) => {
     const settings = ensureSettings();
     if (!settings.filterCiaJsonFromMain) return;
@@ -6597,259 +8133,3 @@ jQuery(async () => {
     await createSettingsUi();
     renderAllMessageControls();
 });
-
-
-function normalizeEmbeddingUrl(url) {
-    const cleanUrl = String(url || '').trim().replace(/\/+$/, '');
-    if (!cleanUrl) {
-        return '';
-    }
-    return cleanUrl.endsWith('/embeddings') ? cleanUrl : `${cleanUrl}/embeddings`;
-}
-
-async function getCustomEmbeddingVectors(texts, signal = undefined) {
-    const settings = ensureSettings();
-    const input = Array.isArray(texts) ? texts.map(x => String(x || '')) : [String(texts || '')];
-    const model = String(settings.embeddingModel || '').trim();
-    const url = normalizeEmbeddingUrl(settings.embeddingApiUrl);
-    const apiKey = String(settings.embeddingApiKey || '').trim();
-
-    if (!model) {
-        throw new Error(t`Please enter the Model name before testing.`);
-    }
-    if (!url) {
-        throw new Error(t`Please enter the API URL before testing.`);
-    }
-
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) {
-        headers.Authorization = `Bearer ${apiKey}`;
-    }
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        signal,
-        body: JSON.stringify({ input, model }),
-    });
-
-    if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || errData?.message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawVectors = Array.isArray(data?.data)
-        ? data.data
-            .slice()
-            .sort((a, b) => Number(a?.index ?? 0) - Number(b?.index ?? 0))
-            .map(x => x?.embedding)
-        : data?.embeddings;
-    const vectors = Array.isArray(rawVectors) ? rawVectors : [];
-
-    if (vectors.length !== input.length || vectors.some(x => !Array.isArray(x) || !x.length)) {
-        throw new Error(t`Embedding response did not contain valid vectors.`);
-    }
-
-    return vectors;
-}
-
-function getWebLlmVectorRequestBody(args = {}) {
-    const settings = ensureSettings();
-    return {
-        source: 'webllm',
-        model: String(settings.embeddingModel || '').trim(),
-        ...args,
-    };
-}
-
-function getEmbeddingsMap(texts, vectors) {
-    const embeddings = {};
-    for (let i = 0; i < texts.length; i++) {
-        embeddings[texts[i]] = vectors[i];
-    }
-    return embeddings;
-}
-
-async function testEmbeddingConnection() {
-    const toast = toastr.info(t`Testing connection, please wait...`, 'Context Image Assistant', { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
-
-    try {
-        await getCustomEmbeddingVectors(['test']);
-        toastr.success(t`Connection tested successfully. Embedding source is working!`, 'Context Image Assistant');
-    } catch (err) {
-        toastr.error(t`Failed to test connection: ${err.message}`, 'Context Image Assistant');
-    } finally {
-        toastr.clear(toast);
-    }
-}
-
-async function importDictionary(name, file) {
-    const toast = toastr.info(t`Reading file...`, t`Importing Dictionary "${name}"`, { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
-    try {
-        const text = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(reader.error);
-            reader.readAsText(file);
-        });
-
-        let items = [];
-        const ext = file.name.split('.').pop().toLowerCase();
-
-        if (ext === 'json') {
-            const parsed = JSON.parse(text);
-            if (Array.isArray(parsed)) {
-                for (const item of parsed) {
-                    const tag = String(item.tag || item.name || '').trim();
-                    const desc = String(item.desc || item.description || item.val || '').trim();
-                    if (tag) items.push({ tag, desc });
-                }
-            } else if (parsed && typeof parsed === 'object') {
-                for (const [tag, descVal] of Object.entries(parsed)) {
-                    const cleanTag = String(tag).trim();
-                    const cleanDesc = String(descVal).trim();
-                    if (cleanTag) items.push({ tag: cleanTag, desc: cleanDesc });
-                }
-            }
-        } else {
-            const lines = text.split(/\r?\n/);
-            for (const line of lines) {
-                const cleanLine = line.trim();
-                if (!cleanLine) continue;
-                let tag = '';
-                let desc = '';
-                if (cleanLine.includes('|')) {
-                    const parts = cleanLine.split('|');
-                    tag = parts[0].trim();
-                    desc = parts.slice(1).join('|').trim();
-                } else if (cleanLine.includes(',')) {
-                    const parts = cleanLine.split(',');
-                    tag = parts[0].trim();
-                    desc = parts.slice(1).join(',').trim();
-                } else {
-                    tag = cleanLine;
-                    desc = cleanLine;
-                }
-                if (tag) items.push({ tag, desc });
-            }
-        }
-
-        if (items.length === 0) {
-            throw new Error(t`No valid tags found in the file.`);
-        }
-
-        const collectionId = `cia_dict_${getStringHash(name)}`;
-        const batchSize = 50;
-
-        toastr.clear(toast);
-        const progressToast = toastr.info(`0/${items.length} (0%) tags processed`, `Importing Dictionary "${name}"`, { closeButton: false, timeOut: 0, extendedTimeOut: 0 });
-
-        for (let i = 0; i < items.length; i += batchSize) {
-            const batchItems = items.slice(i, i + batchSize).map((item, index) => {
-                const textValue = `${item.tag}|${item.desc}`;
-                return {
-                    hash: getStringHash(textValue),
-                    text: textValue,
-                    index: i + index
-                };
-            });
-
-            const embeddingTexts = batchItems.map(item => item.text);
-            const vectors = await getCustomEmbeddingVectors(embeddingTexts);
-            const response = await fetch('/api/vector/insert', {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                body: JSON.stringify({
-                    ...getWebLlmVectorRequestBody({
-                        embeddings: getEmbeddingsMap(embeddingTexts, vectors),
-                    }),
-                    collectionId: collectionId,
-                    items: batchItems,
-                })
-            });
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData?.error?.message || `Failed to insert batch: HTTP ${response.status}`);
-            }
-
-            progressToast.find('.toast-message').text(`${Math.min(i + batchSize, items.length)}/${items.length} (${Math.round((Math.min(i + batchSize, items.length) / items.length) * 100)}%) tags processed`);
-        }
-
-        toastr.clear(progressToast);
-
-        const settings = ensureSettings();
-        if (!settings.dictionaries) settings.dictionaries = {};
-        settings.dictionaries[name] = {
-            name: name,
-            collectionId: collectionId,
-            itemsCount: items.length,
-            createdAt: new Date().toISOString()
-        };
-        settings.activeDictionaryProfile = name;
-        settings.enableDictionary = true;
-
-        saveSettingsDebounced();
-        updateStatusUi();
-        toastr.success(t`Dictionary "${name}" imported successfully.`, 'Context Image Assistant');
-
-    } catch (err) {
-        toastr.clear(toast);
-        toastr.error(t`Failed to import dictionary: ${err.message}`, 'Context Image Assistant');
-    }
-}
-
-async function queryDictionaryRag(searchText) {
-    const settings = ensureSettings();
-    if (!settings.enableDictionary || !settings.activeDictionaryProfile) {
-        return '';
-    }
-    const dict = settings.dictionaries[settings.activeDictionaryProfile];
-    if (!dict) {
-        return '';
-    }
-
-    try {
-        const topK = settings.dictionaryRecallCount || 5;
-        const threshold = settings.dictionaryThreshold !== undefined ? settings.dictionaryThreshold : 0.20;
-        const vectors = await getCustomEmbeddingVectors([searchText]);
-
-        const response = await fetch('/api/vector/query', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ...getWebLlmVectorRequestBody({
-                    embeddings: getEmbeddingsMap([searchText], vectors),
-                }),
-                collectionId: dict.collectionId,
-                searchText: searchText,
-                topK: topK,
-                threshold: threshold
-            })
-        });
-
-        if (!response.ok) {
-            console.warn(`CIA Dictionary: Query failed with HTTP ${response.status}`);
-            return '';
-        }
-
-        const result = await response.json();
-        const metadata = result.metadata || [];
-        const tags = [];
-        for (const item of metadata) {
-            if (item && item.text) {
-                const parts = item.text.split('|');
-                const tag = parts[0].trim();
-                if (tag && !tags.includes(tag)) {
-                    tags.push(tag);
-                }
-            }
-        }
-
-        return tags.join(', ');
-    } catch (err) {
-        console.error('CIA Dictionary: Failed to query RAG', err);
-        return '';
-    }
-}

@@ -11,7 +11,6 @@
                 <button class="cia-tab-btn" data-tab="tab-llm" type="button" data-i18n="[title]LLM Settings tab tooltip"><i class="fa-solid fa-server"></i> <span data-i18n="LLM">LLM</span></button>
                 <button class="cia-tab-btn" data-tab="tab-context" type="button" data-i18n="[title]Context Settings tab tooltip"><i class="fa-solid fa-comment-dots"></i> <span data-i18n="Context">Context</span></button>
                 <button class="cia-tab-btn" data-tab="tab-prompt" type="button" data-i18n="[title]Prompt Settings tab tooltip"><i class="fa-solid fa-gears"></i> <span data-i18n="Prompts">Prompts</span></button>
-                <button class="cia-tab-btn" data-tab="tab-dictionary" type="button" data-i18n="[title]Dictionary Settings tab tooltip"><i class="fa-solid fa-book"></i> <span data-i18n="Dictionary">Dictionary</span></button>
                 <button class="cia-tab-btn" data-tab="tab-recycle" type="button" data-i18n="[title]Image Management tab tooltip"><i class="fa-solid fa-images"></i> <span data-i18n="Gallery">Gallery</span></button>
             </div>
             <div class="cia-tab-desc" id="cia_tab_desc" data-i18n="Run tab description">
@@ -69,9 +68,6 @@
                 <div class="cia-actions-vertical">
                     <button id="cia_analyze_last" class="menu_button" type="button" data-i18n="[title]Force analyze last message tooltip" title="Force prompt planning and image candidate generation for the latest role response.">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> <span data-i18n="Generate Candidate for Last Reply">Generate Candidate for Last Reply</span>
-                    </button>
-                    <button id="cia_inspect_prompts" class="menu_button" type="button" data-i18n="[title]Inspect current raw planner prompts" title="View the final raw prompts that would be sent to the planning LLM.">
-                        <i class="fa-solid fa-eye"></i> <span data-i18n="Inspect Prompts">Inspect Prompts</span>
                     </button>
                 </div>
 
@@ -195,150 +191,66 @@
                     </label>
                 </div>
             </div>
+
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Context Processing">Context Processing</div>
+                <label class="checkbox_label" for="cia_enable_context_cleaner" data-i18n="[title]Enable context cleaner tooltip" title="Apply configurable cleanup rules to the chat history sent to the planner. Candidate JSON filtering remains controlled by its separate context setting.">
+                    <span data-i18n="Enable Planner Context Cleaner">Enable Planner Context Cleaner</span>
+                    <input type="checkbox" id="cia_enable_context_cleaner" class="checkbox">
+                </label>
+                <div class="cia-prompt-action-grid">
+                    <button id="cia_configure_context_cleaner" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Configure context cleaner rules tooltip" title="Configure cleanup rules for the chat history sent to the planner. Advanced patterns are optional.">
+                        <i class="fa-solid fa-sliders"></i> <span data-i18n="Configure Context Cleaner">Configure Context Cleaner</span>
+                    </button>
+                    <button id="cia_clean_context_preview" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Clean planner context tooltip" title="Preview the chat history after stripping summaries, thinking blocks, and UI/code noise.">
+                        <i class="fa-solid fa-soap"></i> <span data-i18n="Clean Planner Context">Clean Planner Context</span>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- TAB 4: Prompts & Templates -->
         <div class="cia-tab-content" id="tab-prompt">
             <div class="cia-section">
-                <div class="cia-section-title" data-i18n="Prompts & Templates">Prompts & Templates</div>
-
-                <div class="cia-popup-edit-row">
-                    <button id="cia_character_reference" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Character reference settings tooltip" title="Configure visual descriptors (e.g., hairstyle, dress style, facial features) for the character/group to be permanently included as generator parameters.">
-                        <i class="fa-solid fa-user-gear"></i> <span data-i18n="Configure Character Reference">Configure Character Reference</span>
-                    </button>
-                </div>
-                <div id="cia_reference_status" class="cia-reference-note" style="margin-bottom: 6px;"></div>
-
-                <div class="cia-field" style="margin-bottom: 10px;" data-i18n="[title]Prompt Mode Tooltip" title="Choose the active system prompt workflow. Legacy and RAG prompts are edited and saved independently.">
-                    <span data-i18n="Prompt Mode">Prompt Mode</span>
-                    <select id="cia_prompt_mode_select" class="text_pole">
-                        <option value="legacy" data-i18n="Legacy System Prompt">Legacy System Prompt</option>
-                        <option value="rag" data-i18n="RAG System Prompt">RAG System Prompt</option>
-                    </select>
-                </div>
-
-                <div class="cia-popup-edit-row">
+                <div class="cia-section-title" data-i18n="Prompt Composition">Prompt Composition</div>
+                <div class="cia-prompt-action-grid">
                     <button id="cia_edit_system_prompt_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]System Prompt Edit Tooltip" title="Edit instruction headers sent to LLM planner specifying output format limits.">
                         <i class="fa-solid fa-pen-to-square"></i> <span data-i18n="Configure System Prompt">Configure System Prompt</span>
                     </button>
-                    <textarea id="cia_system_prompt" style="display: none;"></textarea>
-                </div>
-
-                <div class="cia-popup-edit-row">
+                    <button id="cia_edit_prepend_message_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Configure additional image instructions tooltip" title="Configure additional image-generation instructions injected into the planner system prompt.">
+                        <i class="fa-solid fa-list-check"></i> <span data-i18n="Configure Additional Image Instructions">Configure Additional Image Instructions</span>
+                    </button>
+                    <button id="cia_character_reference" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Character reference settings tooltip" title="Configure visual descriptors (e.g., hairstyle, dress style, facial features) for the character/group to be permanently included as generator parameters.">
+                        <i class="fa-solid fa-user-gear"></i> <span data-i18n="Configure Character Reference">Configure Character Reference</span>
+                    </button>
                     <button id="cia_edit_json_schema_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Custom JSON Schema Tooltip" title="Edit JSON output constraints. Allows injecting extra weights like custom LoRAs or aspect ratios.">
                         <i class="fa-solid fa-code"></i> <span data-i18n="Configure Custom JSON Schema">Configure Custom JSON Schema</span>
                     </button>
-                    <textarea id="cia_custom_json_schema" style="display: none;"></textarea>
                 </div>
+                <div id="cia_reference_status" class="cia-reference-note"></div>
+                <textarea id="cia_system_prompt" style="display: none;"></textarea>
+                <textarea id="cia_prepend_message" style="display: none;"></textarea>
+                <textarea id="cia_custom_json_schema" style="display: none;"></textarea>
+            </div>
 
-                <div class="cia-popup-edit-row">
+            <div class="cia-section">
+                <div class="cia-section-title" data-i18n="Output Processing">Output Processing</div>
+                <div class="cia-prompt-action-grid cia-prompt-action-grid-single">
                     <button id="cia_edit_prompt_rules_btn" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Configure Prompt Rules Tooltip" title="Configure prompt tag filtering and dynamic addition rules.">
                         <i class="fa-solid fa-filter"></i> <span data-i18n="Configure Prompt Rules">Configure Prompt Rules</span>
                     </button>
                 </div>
-
-                <div class="cia-field cia-textarea-field" data-i18n="[title]Prepend Prompt Directives Tooltip" title="Fixed instructions appended to the front of prompts, e.g. quality tags (masterpiece, highly detailed).">
-                    <span data-i18n="Global Prepend Prompt / Quality Tags">Global Prepend Prompt / Quality Tags</span>
-                    <textarea id="cia_prepend_message" class="text_pole textarea_compact" rows="3" placeholder="e.g. masterpiece, extremely detailed, cinematic lighting..."></textarea>
-                </div>
             </div>
 
             <div class="cia-section">
-                <div class="cia-section-title" data-i18n="Format Maintenance">Format Maintenance</div>
-                <div class="cia-actions-vertical">
-                    <button id="cia_restore_prompt" class="menu_button" type="button" data-i18n="[title]Restore Default Prompt Tooltip" title="Resets LLM System Prompt back to original out-of-the-box settings.">
-                        <i class="fa-solid fa-rotate-left"></i> <span data-i18n="Restore Default System Prompt">Restore Default System Prompt</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 5: Custom Dictionary (RAG) -->
-        <div class="cia-tab-content" id="tab-dictionary">
-            <!-- Section: Embedding Model Configuration -->
-            <div class="cia-section">
-                <div class="cia-section-title" data-i18n="Embedding Model Configuration">Embedding Model Configuration</div>
-                <div class="cia-grid">
-                    <label class="cia-field" for="cia_embed_model">
-                        <span data-i18n="Model Name">Model Name</span>
-                        <input id="cia_embed_model" type="text" class="text_pole" placeholder="e.g., text-embedding-3-small">
-                    </label>
-                    <label class="cia-field" for="cia_embed_url" id="cia_embed_url_row">
-                        <span data-i18n="Endpoint Base URL">Endpoint Base URL</span>
-                        <input id="cia_embed_url" type="text" class="text_pole" placeholder="e.g., http://127.0.0.1:11434/v1">
-                    </label>
-                </div>
-                <label class="cia-field cia-full-width-field" for="cia_embed_key" id="cia_embed_key_row">
-                    <span data-i18n="API Key (Optional)">API Key (Optional)</span>
-                    <input id="cia_embed_key" type="password" class="text_pole" autocomplete="off" placeholder="Bearer Token / Secret Key">
-                </label>
-                <button id="cia_embed_test_btn" class="menu_button cia-full-width-btn" type="button">
-                    <i class="fa-solid fa-arrows-rotate"></i> <span data-i18n="Test Connection">Test Connection</span>
-                </button>
-                <div class="cia-profile-row-inline">
-                    <label class="cia-field flex-grow" for="cia_embed_profile_select" data-i18n="[title]Saved Embedding Profiles Tooltip" title="Choose a saved embedding model configuration.">
-                        <span data-i18n="Saved Embedding Profiles">Saved Embedding Profiles</span>
-                        <select id="cia_embed_profile_select" class="text_pole">
-                            <option value="" data-i18n="No profiles saved">No profiles saved</option>
-                        </select>
-                    </label>
-                    <div class="cia-profile-icon-buttons">
-                        <button id="cia_embed_profile_load" class="menu_button icon-btn" type="button" data-i18n="[title]Load selected profile" title="Load selected profile"><i class="fa-solid fa-folder-open"></i></button>
-                        <button id="cia_embed_profile_save" class="menu_button icon-btn" type="button" data-i18n="[title]Save current configuration" title="Save current configuration"><i class="fa-solid fa-floppy-disk"></i></button>
-                        <button id="cia_embed_profile_delete" class="menu_button icon-btn type_delete" type="button" data-i18n="[title]Delete selected profile" title="Delete selected profile"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Section: Dictionary Manager -->
-            <div class="cia-section">
-                <div class="cia-section-title" data-i18n="Dictionary Management">Dictionary Management</div>
-                <div class="cia-checkbox-grid">
-                    <label class="checkbox_label" for="cia_enable_dict" title="Query the dictionary for standard Danbooru tags matching the context and insert them.">
-                        <span data-i18n="Enable Dictionary RAG Alignment">Enable Dictionary RAG Alignment</span>
-                        <input type="checkbox" id="cia_enable_dict" class="checkbox">
-                    </label>
-                </div>
-                <div class="cia-grid" style="margin-top: 10px;">
-                    <label class="cia-field" for="cia_dict_active_select">
-                        <span data-i18n="Active Dictionary">Active Dictionary</span>
-                        <select id="cia_dict_active_select" class="text_pole">
-                            <option value="">None / Disabled</option>
-                        </select>
-                    </label>
-                    <label class="cia-field" for="cia_dict_recall_count">
-                        <span data-i18n="Recall Tag Count">Recall Tag Count</span>
-                        <input id="cia_dict_recall_count" type="number" min="1" max="50" step="1" class="text_pole">
-                    </label>
-                </div>
-                <div class="cia-field cia-full-width-field" style="margin-top: 10px;">
-                    <span data-i18n="Similarity Threshold">Similarity Threshold</span>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <input id="cia_dict_threshold" type="range" min="0" max="1" step="0.05" style="flex-grow: 1;">
-                        <span id="cia_dict_threshold_val" style="min-width: 32px; font-weight: bold; text-align: right;">0.20</span>
-                    </div>
-                </div>
-                <div class="cia-actions-vertical" style="margin-top: 10px;">
-                    <button id="cia_dict_delete_btn" class="menu_button type_delete" type="button">
-                        <i class="fa-solid fa-trash-can"></i> <span data-i18n="Delete Current Dictionary">Delete Current Dictionary</span>
+                <div class="cia-section-title" data-i18n="Request Inspection">Request Inspection</div>
+                <div class="cia-prompt-action-grid cia-prompt-action-grid-single">
+                    <button id="cia_inspect_prompts" class="menu_button cia-popup-trigger-btn" type="button" data-i18n="[title]Inspect current raw planner prompts" title="View the final raw prompts that would be sent to the planning LLM.">
+                        <i class="fa-solid fa-eye"></i> <span data-i18n="Inspect Prompts">Inspect Prompts</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Section: Import Dictionary -->
-            <div class="cia-section">
-                <div class="cia-section-title" data-i18n="Import New Dictionary">Import New Dictionary</div>
-                <div class="cia-field cia-full-width-field">
-                    <span data-i18n="Dictionary Name">Dictionary Name</span>
-                    <input id="cia_dict_import_name" type="text" class="text_pole" placeholder="e.g., Danbooru Core">
-                </div>
-                <div class="cia-actions-vertical" style="margin-top: 10px;">
-                    <input type="file" id="cia_dict_import_file" accept=".txt,.csv,.json" style="display: none;">
-                    <button id="cia_dict_import_trigger_btn" class="menu_button" type="button">
-                        <i class="fa-solid fa-file-import"></i> <span data-i18n="Select File & Import">Select File & Import</span>
-                    </button>
-                </div>
-            </div>
         </div>
 
         <!-- TAB 5: Image Management -->
